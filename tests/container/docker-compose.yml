@@ -1,0 +1,24 @@
+# ───────────────────────────────────────────────────────────
+# Phronesis Test Runner (podman-compose)
+# Usage:
+#   podman-compose -f tests/container/docker-compose.yml build
+#   podman-compose -f tests/container/docker-compose.yml up
+# ───────────────────────────────────────────────────────────
+version: "3.9"
+services:
+  phronesis-test:
+    build:
+      context: ../..
+      dockerfile: tests/container/Dockerfile
+    image: phronesis-test:latest
+    container_name: phronesis-test
+    environment:
+      - NODE_ENV=test
+      - XDG_DATA_HOME=/tmp/test-data/xdg
+      - XDG_CONFIG_HOME=/tmp/test-data/xdg-config
+    # Mount the source so test changes don't require rebuild
+    volumes:
+      - ../../src/skill-creator:/test/src/skill-creator:ro
+      - ../../src/session-search:/test/src/session-search:ro
+    # Give it enough time for opencode serve boot + test run
+    stop_signal: SIGTERM
