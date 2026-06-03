@@ -965,6 +965,204 @@ async function testOpenCodeIntegration() {
 }
 
 // ───────────────────────────────────────────────────────────
+// Section 7: Memory Consolidation Plugin Tests
+// ───────────────────────────────────────────────────────────
+
+async function testMemoryConsolidation() {
+  console.log('\n🧠 Section 7: Memory Consolidation Plugin Tests');
+  console.log('──────────────────────────────────────────');
+
+  // --- 7.1 Module imports ---
+  await testAsync('memory-consolidation module imports as ESM', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'memory-consolidation', 'index.js'));
+    assert(typeof mod.default === 'function', 'default export must be a function');
+  });
+
+  // --- 7.2 Plugin structure ---
+  await testAsync('memory-consolidation returns hooks with expected shape', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'memory-consolidation', 'index.js'));
+    const hooks = await mod.default({ worktree: '/tmp' });
+
+    assert(hooks !== null && typeof hooks === 'object', 'hooks must be an object');
+    assert(typeof hooks.tool === 'object', 'must register tools');
+    assert(typeof hooks['experimental.chat.system.transform'] === 'function', 'must have system.transform hook');
+    assert(typeof hooks['experimental.session.compacting'] === 'function', 'must have session.compacting hook');
+    assert(typeof hooks.config === 'function', 'must have config hook');
+  });
+
+  // --- 7.3 All tools registered ---
+  await testAsync('memory-consolidation registers all 8 tools', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'memory-consolidation', 'index.js'));
+    const hooks = await mod.default({});
+
+    const expectedTools = [
+      'add-fact', 'add-observations', 'search-facts', 'list-facts',
+      'forget-fact', 'consolidate-memory', 'mark-consolidated', 'memory-stats',
+    ];
+    for (const name of expectedTools) {
+      assert(hooks.tool[name] !== undefined, `${name} tool must be registered`);
+      assert(typeof hooks.tool[name].execute === 'function', `${name} must have execute function`);
+    }
+  });
+
+  // --- 7.4 add-fact stores and retrieves ---
+  await testAsync('add-fact stores a fact and search-finds it', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'memory-consolidation', 'index.js'));
+    const hooks = await mod.default({});
+
+    const testContent = 'TEST_PHRONESIS_UNIQUE_' + Date.now();
+
+    // Store a fact
+    const addResult = await hooks.tool['add-fact'].execute({
+      content: testContent,
+      category: 'test',
+      confidence: 0.9,
+    }, {});
+
+    const addParsed = JSON.parse(addResult);
+    assert(addParsed.success === true, 'add-fact must succeed');
+
+    // Search for it
+    const searchResult = await hooks.tool['search-facts'].execute({
+      query: 'TEST_PHRONESIS',
+      limit: 10,
+    }, {});
+
+    const searchParsed = JSON.parse(searchResult);
+    assert(searchParsed.success === true, 'search-facts must succeed');
+    assert(searchParsed.count >= 1, 'must find at least 1 fact');
+
+    const found = searchParsed.facts.some(f => f.content === testContent);
+    assert(found, 'must find the stored test fact');
+
+    // Clean up: find the ID and forget it
+    const target = searchParsed.facts.find(f => f.content === testContent);
+    if (target) {
+      const forgetResult = await hooks.tool['forget-fact'].execute({ id: target.id }, {});
+      const forgetParsed = JSON.parse(forgetResult);
+      assert(forgetParsed.success === true, 'forget-fact must succeed');
+      assert(forgetParsed.message.includes('removed'), 'message should confirm removal');
+    }
+  });
+
+  // --- 7.5 add-fact updates existing fact with same content ---
+  await testAsync('add-fact updates existing fact on duplicate content', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'memory-consolidation', 'index.js'));
+    const hooks = await mod.default({});
+
+    const testContent = 'DUP_TEST_' + Date.now();
+
+    // Create first
+    const r1 = await hooks.tool['add-fact'].execute({
+      content: testContent, category: 'test', confidence: 0.8,
+    }, {});
+    const p1 = JSON.parse(r1);
+    assert(p1.action === 'created', 'first add should create');
+
+    // Second add with same content — should update, not create
+    const r2 = await hooks.tool['add-fact'].execute({
+      content: testContent, category: 'test', confidence: 0.9,
+    }, {});
+    const p2 = JSON.parse(r2);
+    assert(p2.success === true, 'duplicate add-fact should succeed');
+    assert(p2.action === 'updated', 'duplicate should update existing fact');
+
+    // Clean up
+    const searchResult = await hooks.tool['search-facts'].execute({ query: 'DUP_TEST', limit: 5 }, {});
+    const sp = JSON.parse(searchResult);
+    const target = sp.facts.find(f => f.content === testContent);
+    if (target) await hooks.tool['forget-fact'].execute({ id: target.id }, {});
+  });
+
+  // --- 7.6 add-observations batches storage ---
+  await testAsync('add-observations stores observations in batch', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'memory-consolidation', 'index.js'));
+    const hooks = await mod.default({});
+
+    const result = await hooks.tool['add-observations'].execute({
+      observations: JSON.stringify(['Test observation A', 'Test observation B']),
+      topic: 'testing',
+    }, {});
+
+    const parsed = JSON.parse(result);
+    assert(parsed.success === true, 'add-observations must succeed');
+    assert(parsed.stored === 2, 'should store 2 observations');
+  });
+
+  // --- 7.7 list-facts returns valid data ---
+  await testAsync('list-facts returns category breakdown', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'memory-consolidation', 'index.js'));
+    const hooks = await mod.default({});
+
+    const result = await hooks.tool['list-facts'].execute({ limit: 5 }, {});
+    const parsed = JSON.parse(result);
+    assert(parsed.success === true, 'list-facts must succeed');
+    assert(typeof parsed.total === 'number', 'total must be a number');
+    assert(Array.isArray(parsed.categories), 'must have categories array');
+    assert(Array.isArray(parsed.facts), 'must have facts array');
+  });
+
+  // --- 7.8 memory-stats returns valid stats ---
+  await testAsync('memory-stats returns store statistics', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'memory-consolidation', 'index.js'));
+    const hooks = await mod.default({});
+
+    const result = await hooks.tool['memory-stats'].execute({}, {});
+    const parsed = JSON.parse(result);
+    assert(parsed.success === true, 'memory-stats must succeed');
+    assert(parsed.local !== undefined, 'must have local stats');
+    assert(typeof parsed.local.facts === 'number', 'facts count must be a number');
+    assert(typeof parsed.local.observations === 'number', 'observations count must be a number');
+    assert(typeof parsed.supermemory === 'object', 'must have supermemory status');
+    assert(parsed.supermemory.configured === false, 'supermemory should be not configured by default');
+  });
+
+  // --- 7.9 consolidate-memory handles empty state ---
+  await testAsync('consolidate-memory runs with no sessions', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'memory-consolidation', 'index.js'));
+    const hooks = await mod.default({});
+
+    const result = await hooks.tool['consolidate-memory'].execute({ sessions_to_review: 5 }, {});
+    const parsed = JSON.parse(result);
+    assert(parsed.success === true, 'consolidate-memory must succeed');
+    assert(typeof parsed.run_id === 'number', 'must return a run_id');
+    assert(Array.isArray(parsed.sessions), 'sessions must be an array');
+  });
+
+  // --- 7.10 mark-consolidated handles missing session ---
+  await testAsync('mark-consolidated handles non-existent session', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'memory-consolidation', 'index.js'));
+    const hooks = await mod.default({});
+
+    const result = await hooks.tool['mark-consolidated'].execute({ session_id: 'non-existent-session' }, {});
+    const parsed = JSON.parse(result);
+    assert(parsed.success === true, 'mark-consolidated should not throw');
+    assert(parsed.marked === 0, 'should mark 0 sessions');
+  });
+
+  // --- 7.11 System transform injects memory context ---
+  await testAsync('system.transform injects memory guidance', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'memory-consolidation', 'index.js'));
+    const hooks = await mod.default({});
+
+    const xfrm = hooks['experimental.chat.system.transform'];
+    const input = {
+      messages: [{ role: 'user', content: 'help with database' }],
+    };
+    const output = { system: [] };
+
+    // Should not throw
+    await xfrm(input, output);
+
+    const text = output.system.join('\n');
+    assert(text.includes('Persistent Memory System'), 'must inject memory system section');
+    assert(text.includes('add-fact'), 'must mention add-fact');
+    assert(text.includes('Memory Tools Available'), 'must have memory tools section');
+    assert(text.includes('consolidate-memory'), 'must mention consolidate-memory');
+  });
+}
+
+// ───────────────────────────────────────────────────────────
 // Main
 // ───────────────────────────────────────────────────────────
 
@@ -975,6 +1173,7 @@ async function main() {
     await testSkillFileSystem();
     await testSystemTransform();
     await testPersonaPlugin();
+    await testMemoryConsolidation();
     await testOpenCodeIntegration();
   } catch (e) {
     console.log(`\n💥 Unexpected test error: ${e.message}`);

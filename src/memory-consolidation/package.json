@@ -1,0 +1,19 @@
+{
+  "name": "opencode-memory-consolidation",
+  "version": "0.1.0",
+  "description": "Local-first persistent memory with periodic consolidation — captures session knowledge as durable facts. Supermemory and Honcho optional add-ons.",
+  "type": "module",
+  "main": "index.js",
+  "opencode": {
+    "type": "plugin",
+    "hooks": [
+      "experimental.chat.system.transform",
+      "experimental.session.compacting",
+      "config"
+    ]
+  },
+  "dependencies": {
+    "@opencode-ai/plugin": "^1.14.19",
+    "better-sqlite3": "^11.0.0"
+  }
+}
