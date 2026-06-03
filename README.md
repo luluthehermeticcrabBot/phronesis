@@ -19,21 +19,43 @@ Phronesis fills these gaps, one plugin at a time.
 
 ```
 docs/
-├── 01-analysis.md          Hermes vs OpenCode gap analysis
-├── 02-roadmap.md           Strategic phases and priorities
-├── 03-architecture.md      Technical architecture for plugins
-└── 04-first-steps.md       Getting started guide
+├── 01-analysis.md              Hermes vs OpenCode gap analysis
+├── 02-roadmap.md               Strategic phases and priorities
+├── 03-architecture.md          Technical architecture for plugins
+├── 04-first-steps.md           Getting started guide
+├── 05-telegram-gateway.md      Telegram bot setup & config
+├── 07-telegram-multi-instance.md  Multi-instance deployment
+└── 08-gateway-strategy.md      Gateway architecture & plan
 
-src/                        Plugin source code (future)
+src/
+├── skill-creator/              P1 — Auto-skill creation plugin
+├── session-search/             P2 — FTS5 session search plugin
+├── persona/                    P4 — Structured persona plugin
+└── memory-consolidation/       P5 — Local-first memory plugin
+
+tests/
+└── container/                  Podman/Docker test container
+    ├── Dockerfile              Multi-stage build
+    ├── test.mjs                48-test suite
+    └── entrypoint.sh           Test runner
 ```
 
-## Phases
+## Status
 
-| Phase | Focus | Effort |
-|-------|-------|--------|
-| 🟢 **Do First** | Auto-skill creation, session search (FTS5) | Days |
-| 🟡 **Do Second** | Persona system, memory consolidation, remote execution | 1-2 weeks |
-| 🔴 **Do Third** | Multi-platform gateway, full skill lifecycle, user profiling | 1-3 months |
+| Plugin | Phase | Tests | Status |
+|--------|-------|-------|--------|
+| `skill-creator` | 🟢 P1 | ✅ Passing | Active |
+| `session-search` | 🟢 P2 | ✅ Passing | Active |
+| `persona` | 🟡 P4 | ✅ Passing | Active |
+| `memory-consolidation` | 🟡 P5 | ✅ Passing | Active |
+
+### Gateway
+
+| Platform | Status | Details |
+|----------|--------|---------|
+| Telegram | ✅ Production | via @grinev/opencode-telegram-bot |
+| AgentMail | ✅ Configured | Remote MCP server |
+| CLI | ✅ Native | Always available |
 
 ## Core Philosophy
 

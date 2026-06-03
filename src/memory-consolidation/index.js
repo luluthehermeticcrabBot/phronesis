@@ -1,7 +1,10 @@
 import { tool } from "@opencode-ai/plugin";
+import { createRequire } from "node:module";
 import fs from "node:fs";
 import path from "node:path";
 import { homedir } from "node:os";
+
+const require = createRequire(import.meta.url);
 
 // ---------------------------------------------------------------------------
 // Local SQLite Memory Store — always active, no configuration needed
@@ -199,8 +202,7 @@ function buildFactContext(userInput, maxFacts) {
       // Simple keyword match via FTS5 (no LLM needed here)
       const terms = userInput
         .toLowerCase()
-        .replace(/[^a-z0-9\s]/g, "")
-        .split(/\s+/)
+        .split(/[^a-z0-9]+/)
         .filter((w) => w.length > 3)
         .map((w) => `"${w}"`)
         .join(" OR ");
@@ -503,8 +505,7 @@ export default async function plugin(ctx) {
 
             const terms = args.query
               .toLowerCase()
-              .replace(/[^a-z0-9\s]/g, "")
-              .split(/\s+/)
+              .split(/[^a-z0-9]+/)
               .filter((w) => w.length > 2)
               .map((w) => `"${w}"`)
               .join(" OR ");
