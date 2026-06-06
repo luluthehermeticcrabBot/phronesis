@@ -19,43 +19,47 @@ Phronesis fills these gaps, one plugin at a time.
 
 ```
 docs/
-├── 01-analysis.md              Hermes vs OpenCode gap analysis
-├── 02-roadmap.md               Strategic phases and priorities
-├── 03-architecture.md          Technical architecture for plugins
-├── 04-first-steps.md           Getting started guide
-├── 05-telegram-gateway.md      Telegram bot setup & config
+├── 01-analysis.md               Hermes vs OpenCode gap analysis
+├── 02-roadmap.md                Strategic phases and priorities
+├── 03-architecture.md           Technical architecture for plugins
+├── 04-first-steps.md            Getting started guide
+├── 05-plugin-api-reference.md   OpenCode plugin API reference
+├── 06-telegram-gateway.md       Telegram bot setup & config
 ├── 07-telegram-multi-instance.md  Multi-instance deployment
-└── 08-gateway-strategy.md      Gateway architecture & plan
+├── 08-gateway-strategy.md       Gateway architecture & plan
+├── 09-progress-report.md        Current progress & lessons learned
+└── 10-contributing.md           Development guide
 
 src/
-├── skill-creator/              P1 — Auto-skill creation plugin
-├── session-search/             P2 — FTS5 session search plugin
-├── persona/                    P4 — Structured persona plugin
-└── memory-consolidation/       P5 — Local-first memory plugin
+├── skill-creator/               P1 — Auto-skill creation plugin
+├── session-search/              P2 — FTS5 session search plugin
+├── persona/                     P4 — Structured persona plugin
+└── memory-consolidation/        P5 — Local-first memory plugin
 
 tests/
-└── container/                  Podman/Docker test container
-    ├── Dockerfile              Multi-stage build
-    ├── test.mjs                48-test suite
-    └── entrypoint.sh           Test runner
+└── container/                   Podman/Docker test container
+    ├── Dockerfile               Multi-stage build
+    ├── test.mjs                 48-test suite
+    └── entrypoint.sh            Test runner
 ```
 
 ## Status
 
 | Plugin | Phase | Tests | Status |
 |--------|-------|-------|--------|
-| `skill-creator` | 🟢 P1 | ✅ Passing | Active |
-| `session-search` | 🟢 P2 | ✅ Passing | Active |
-| `persona` | 🟡 P4 | ✅ Passing | Active |
-| `memory-consolidation` | 🟡 P5 | ✅ Passing | Active |
+| `skill-creator` | 🟢 P1 | ✅ 48/48 | Active |
+| `session-search` | 🟢 P2 | ✅ 48/48 | Active |
+| `persona` | 🟡 P4 | ✅ 48/48 | Active |
+| `memory-consolidation` | 🟡 P5 | ✅ 48/48 | Active |
 
 ### Gateway
 
-| Platform | Status | Details |
-|----------|--------|---------|
-| Telegram | ✅ Production | via @grinev/opencode-telegram-bot |
-| AgentMail | ✅ Configured | Remote MCP server |
-| CLI | ✅ Native | Always available |
+| Platform | Component | Status | Details |
+|----------|-----------|--------|---------|
+| Telegram | Bot 1 | ✅ Production | `opencode-telegram.service`, port 4096 |
+| Telegram | Bot 2 | ✅ Production | `opencode-telegram-2.service`, port 4097 |
+| Email | AgentMail MCP | ✅ Configured | Remote MCP at `mcp.agentmail.to` (needs API key) |
+| CLI | Native | ✅ Always available | Direct terminal |
 
 ## Core Philosophy
 
