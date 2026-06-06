@@ -2,7 +2,8 @@
 // Phronesis Plugin Test Suite
 // Tests: module parsing, hook structure, FTS5 search,
 //        skill creation with dedup/update/feedback,
-//        system transform, OpenCode integration
+//        system transform, OpenCode integration,
+//        remote execution, skill lifecycle, user profiling
 // ───────────────────────────────────────────────────────────
 
 import { createRequire } from 'module';
@@ -1228,6 +1229,471 @@ async function testMemoryConsolidation() {
 }
 
 // ───────────────────────────────────────────────────────────
+// Section 8: Remote Execution Plugin Tests
+// ───────────────────────────────────────────────────────────
+
+async function testRemoteExecution() {
+  console.log('\n🔧 Section 8: Remote Execution Plugin Tests');
+  console.log('──────────────────────────────────────────');
+
+  // --- 8.1 Module imports ---
+  await testAsync('remote-execution module imports as ESM', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'remote-execution', 'index.js'));
+    assert(typeof mod.default === 'function', 'default export must be a function');
+  });
+
+  // --- 8.2 Plugin structure ---
+  await testAsync('remote-execution returns hooks with expected shape', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'remote-execution', 'index.js'));
+    const hooks = await mod.default({});
+
+    assert(hooks !== null && typeof hooks === 'object', 'hooks must be an object');
+    assert(typeof hooks.tool === 'object', 'must register tools');
+    assert(typeof hooks.config === 'function', 'must have config hook');
+  });
+
+  // --- 8.3 All tools registered ---
+  await testAsync('remote-execution registers run-on and list-targets tools', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'remote-execution', 'index.js'));
+    const hooks = await mod.default({});
+
+    const expectedTools = ['run-on', 'list-targets'];
+    for (const name of expectedTools) {
+      assert(hooks.tool[name] !== undefined, `${name} tool must be registered`);
+      assert(typeof hooks.tool[name].execute === 'function', `${name} must have execute function`);
+      assert(typeof hooks.tool[name].description === 'string', `${name} must have a description`);
+    }
+  });
+
+  // --- 8.4 list-targets returns local target by default ---
+  await testAsync('list-targets returns at least the local target', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'remote-execution', 'index.js'));
+    const hooks = await mod.default({});
+
+    const result = await hooks.tool['list-targets'].execute({}, {});
+    const parsed = JSON.parse(result);
+
+    assert(parsed.count >= 1, 'must have at least 1 target');
+    const local = parsed.targets.find(t => t.label === 'local');
+    assert(local !== undefined, 'must have local target');
+    assert(local.type === 'local', 'local target must have type local');
+  });
+
+  // --- 8.5 run-on with local target executes successfully ---
+  await testAsync('run-on local target runs a simple command', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'remote-execution', 'index.js'));
+    const hooks = await mod.default({});
+
+    const result = await hooks.tool['run-on'].execute({
+      target: 'local',
+      command: 'echo "hello from phronesis test"',
+      timeout: 10000,
+    }, {});
+
+    const parsed = JSON.parse(result);
+    assert(parsed.success === true, 'local command must succeed');
+    assert(parsed.target === 'local', 'result must reference target');
+    assert(parsed.stdout.includes('hello from phronesis test'), 'stdout must contain command output');
+    assert(typeof parsed.durationMs === 'number', 'must report duration');
+    assert(parsed.exitCode === 0, 'exit code must be 0');
+  });
+
+  // --- 8.6 run-on with nonexistent target returns error ---
+  await testAsync('run-on with unknown target returns helpful error', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'remote-execution', 'index.js'));
+    const hooks = await mod.default({});
+
+    const result = await hooks.tool['run-on'].execute({
+      target: 'nonexistent-target-xyz',
+      command: 'echo test',
+    }, {});
+
+    const parsed = JSON.parse(result);
+    assert(parsed.success === false, 'must return success=false for unknown target');
+    assert(parsed.error.includes('nonexistent-target-xyz'), 'error must reference the unknown target');
+    assert(Array.isArray(parsed.available), 'must list available targets');
+    assert(parsed.available.includes('local'), 'available must include local');
+  });
+
+  // --- 8.7 run-on with failing command returns exit code ---
+  await testAsync('run-on reports non-zero exit codes from failed commands', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'remote-execution', 'index.js'));
+    const hooks = await mod.default({});
+
+    const result = await hooks.tool['run-on'].execute({
+      target: 'local',
+      command: 'false',  // Always exits with 1
+    }, {});
+
+    const parsed = JSON.parse(result);
+    assert(parsed.success === false, 'must return success=false for failed command');
+    assert(parsed.exitCode === 1, 'exit code must be 1 for false command');
+  });
+}
+
+// ───────────────────────────────────────────────────────────
+// Section 9: Skill Lifecycle Plugin Tests
+// ───────────────────────────────────────────────────────────
+
+async function testSkillLifecycle() {
+  console.log('\n📊 Section 9: Skill Lifecycle Plugin Tests');
+  console.log('──────────────────────────────────────────');
+
+  const tmpDir = join(tmpdir(), 'phronesis-lifecycle-' + Date.now());
+  mkdirSync(join(tmpDir, '.opencode', 'skills', 'test-skill'), { recursive: true });
+
+  // Create a test SKILL.md
+  writeFileSync(join(tmpDir, '.opencode', 'skills', 'test-skill', 'SKILL.md'), `---
+name: test-skill
+description: A test skill for lifecycle testing
+trigger: when testing lifecycle
+tools: ["bash", "read"]
+---
+
+# test-skill
+
+## Description
+A test skill for lifecycle testing
+
+## When to Use
+when testing lifecycle
+
+## Steps
+1. Run test
+2. Verify result
+
+## Tools Used
+- bash
+- read
+`);
+
+  // Create a second skill for deprecation testing
+  mkdirSync(join(tmpDir, '.opencode', 'skills', 'old-skill'), { recursive: true });
+  writeFileSync(join(tmpDir, '.opencode', 'skills', 'old-skill', 'SKILL.md'), `---
+name: old-skill
+description: An outdated skill
+trigger: when old stuff breaks
+---
+
+# old-skill
+
+## Description
+An outdated skill
+`);
+
+  // --- 9.1 Module imports ---
+  await testAsync('skill-lifecycle module imports as ESM', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'skill-lifecycle', 'index.js'));
+    assert(typeof mod.default === 'function', 'default export must be a function');
+  });
+
+  // --- 9.2 Plugin structure ---
+  await testAsync('skill-lifecycle returns hooks with expected shape', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'skill-lifecycle', 'index.js'));
+    const hooks = await mod.default({ worktree: tmpDir });
+
+    assert(hooks !== null && typeof hooks === 'object', 'hooks must be an object');
+    assert(typeof hooks.tool === 'object', 'must register tools');
+    assert(typeof hooks['experimental.chat.system.transform'] === 'function', 'must have system.transform hook');
+    assert(typeof hooks['tool.execute.after'] === 'function', 'must have tool.execute.after hook');
+    assert(typeof hooks.config === 'function', 'must have config hook');
+  });
+
+  // --- 9.3 All tools registered ---
+  await testAsync('skill-lifecycle registers all 5 tools', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'skill-lifecycle', 'index.js'));
+    const hooks = await mod.default({ worktree: tmpDir });
+
+    const expectedTools = ['skill-stats', 'skill-versions', 'skill-verify', 'skill-deprecate', 'skill-prune'];
+    for (const name of expectedTools) {
+      assert(hooks.tool[name] !== undefined, `${name} tool must be registered`);
+      assert(typeof hooks.tool[name].execute === 'function', `${name} must have execute function`);
+      assert(typeof hooks.tool[name].description === 'string', `${name} must have a description`);
+    }
+  });
+
+  // --- 9.4 skill-stats returns correct data ---
+  await testAsync('skill-stats returns stats for existing skills', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'skill-lifecycle', 'index.js'));
+    const hooks = await mod.default({ worktree: tmpDir });
+
+    const result = await hooks.tool['skill-stats'].execute({}, {});
+    const parsed = JSON.parse(result);
+
+    assert(parsed.summary.totalSkills >= 2, 'must detect at least 2 skills');
+    assert(Array.isArray(parsed.skills), 'skills must be an array');
+
+    const testSkill = parsed.skills.find(s => s.name === 'test-skill');
+    assert(testSkill !== undefined, 'must find test-skill');
+    assert(testSkill.description === 'A test skill for lifecycle testing', 'must read description');
+    assert(testSkill.version === 1, 'initial version should be 1');
+    assert(testSkill.deprecated === null, 'should not be deprecated');
+  });
+
+  // --- 9.5 skill-versions returns empty for new skill ---
+  await testAsync('skill-versions returns empty for skill with no versions', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'skill-lifecycle', 'index.js'));
+    const hooks = await mod.default({ worktree: tmpDir });
+
+    const result = await hooks.tool['skill-versions'].execute({ name: 'test-skill' }, {});
+    const parsed = JSON.parse(result);
+
+    assert(parsed.success === true, 'must succeed');
+    assert(parsed.skill === 'test-skill', 'must reference skill name');
+    assert(parsed.currentVersion === 1, 'current version should be 1');
+    assert(Array.isArray(parsed.versions), 'versions must be an array');
+  });
+
+  // --- 9.6 skill-versions handles non-existent skill ---
+  await testAsync('skill-versions returns error for non-existent skill', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'skill-lifecycle', 'index.js'));
+    const hooks = await mod.default({ worktree: tmpDir });
+
+    const result = await hooks.tool['skill-versions'].execute({ name: 'no-such-skill' }, {});
+    const parsed = JSON.parse(result);
+
+    assert(parsed.success === false, 'must fail for non-existent skill');
+  });
+
+  // --- 9.7 skill-verify validates well-formed skill ---
+  await testAsync('skill-verify checks skill structure', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'skill-lifecycle', 'index.js'));
+    const hooks = await mod.default({ worktree: tmpDir });
+
+    const result = await hooks.tool['skill-verify'].execute({ name: 'test-skill' }, {});
+    const parsed = JSON.parse(result);
+
+    assert(parsed.skill === 'test-skill', 'must reference skill name');
+    assert(typeof parsed.healthy === 'boolean', 'must have healthy flag');
+    assert(parsed.meta.version === 1, 'must have version info');
+  });
+
+  // --- 9.8 skill-deprecate marks skill as deprecated ---
+  await testAsync('skill-deprecate marks a skill as deprecated', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'skill-lifecycle', 'index.js'));
+    const hooks = await mod.default({ worktree: tmpDir });
+
+    const result = await hooks.tool['skill-deprecate'].execute({
+      name: 'old-skill',
+      reason: 'Superseded by test-skill',
+    }, {});
+
+    const parsed = JSON.parse(result);
+    assert(parsed.success === true, 'deprecate must succeed');
+    assert(parsed.action === 'deprecate', 'action must be deprecate');
+
+    // Verify via skill-stats
+    const statsResult = await hooks.tool['skill-stats'].execute({}, {});
+    const statsParsed = JSON.parse(statsResult);
+    const oldSkill = statsParsed.skills.find(s => s.name === 'old-skill');
+    assert(oldSkill.deprecated !== null, 'old-skill should show as deprecated');
+  });
+
+  // --- 9.9 skill-deprecate reinstates ---
+  await testAsync('skill-deprecate with reinstate removes deprecation', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'skill-lifecycle', 'index.js'));
+    const hooks = await mod.default({ worktree: tmpDir });
+
+    const result = await hooks.tool['skill-deprecate'].execute({
+      name: 'old-skill',
+      reinstate: true,
+    }, {});
+
+    const parsed = JSON.parse(result);
+    assert(parsed.success === true, 'reinstate must succeed');
+    assert(parsed.action === 'reinstate', 'action must be reinstate');
+
+    // Verify via skill-stats
+    const statsResult = await hooks.tool['skill-stats'].execute({}, {});
+    const statsParsed = JSON.parse(statsResult);
+    const oldSkill = statsParsed.skills.find(s => s.name === 'old-skill');
+    assert(oldSkill.deprecated === null, 'skill should no longer be deprecated');
+  });
+
+  // --- 9.10 skill-prune dry-run shows candidates ---
+  await testAsync('skill-prune dry-run reports candidates correctly', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'skill-lifecycle', 'index.js'));
+    const hooks = await mod.default({ worktree: tmpDir });
+
+    // First deprecate old-skill
+    await hooks.tool['skill-deprecate'].execute({ name: 'old-skill', reason: 'Testing prune' }, {});
+
+    const result = await hooks.tool['skill-prune'].execute({
+      days: 0, // 0 days = any deprecated skill
+      dryRun: true,
+    }, {});
+
+    const parsed = JSON.parse(result);
+    assert(parsed.success === true, 'prune dry-run must succeed');
+    assert(parsed.dryRun === true, 'must indicate dry run');
+    assert(parsed.candidates.length >= 1, 'must find at least 1 candidate');
+    assert(parsed.candidates.some(c => c.name === 'old-skill'), 'candidates should include old-skill');
+  });
+
+  // --- 9.11 System transform injects lifecycle info ---
+  await testAsync('skill-lifecycle system.transform runs without error', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'skill-lifecycle', 'index.js'));
+    const hooks = await mod.default({ worktree: tmpDir });
+
+    const xfrm = hooks['experimental.chat.system.transform'];
+    const input = { messages: [{ role: 'user', content: 'test' }] };
+    const output = { system: [] };
+
+    // Should not throw
+    await xfrm(input, output);
+  });
+
+  rmSync(tmpDir, { recursive: true, force: true });
+}
+
+// ───────────────────────────────────────────────────────────
+// Section 10: User Profiling Plugin Tests
+// ───────────────────────────────────────────────────────────
+
+async function testUserProfiling() {
+  console.log('\n👤 Section 10: User Profiling Plugin Tests');
+  console.log('──────────────────────────────────────────');
+
+  const tmpDir = join(tmpdir(), 'phronesis-profile-' + Date.now());
+
+  // --- 10.1 Module imports ---
+  await testAsync('user-profiling module imports as ESM', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'user-profiling', 'index.js'));
+    assert(typeof mod.default === 'function', 'default export must be a function');
+  });
+
+  // --- 10.2 Plugin structure ---
+  await testAsync('user-profiling returns hooks with expected shape', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'user-profiling', 'index.js'));
+    const hooks = await mod.default({ worktree: tmpDir });
+
+    assert(hooks !== null && typeof hooks === 'object', 'hooks must be an object');
+    assert(typeof hooks.tool === 'object', 'must register tools');
+    assert(typeof hooks['experimental.chat.system.transform'] === 'function', 'must have system.transform hook');
+    assert(typeof hooks['experimental.chat.messages.transform'] === 'function', 'must have messages.transform hook');
+    assert(typeof hooks['tool.execute.after'] === 'function', 'must have tool.execute.after hook');
+    assert(typeof hooks.config === 'function', 'must have config hook');
+  });
+
+  // --- 10.3 All tools registered ---
+  await testAsync('user-profiling registers all 3 tools', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'user-profiling', 'index.js'));
+    const hooks = await mod.default({ worktree: tmpDir });
+
+    const expectedTools = ['profile-summary', 'profile-preference', 'profile-insights'];
+    for (const name of expectedTools) {
+      assert(hooks.tool[name] !== undefined, `${name} tool must be registered`);
+      assert(typeof hooks.tool[name].execute === 'function', `${name} must have execute function`);
+      assert(typeof hooks.tool[name].description === 'string', `${name} must have a description`);
+    }
+  });
+
+  // --- 10.4 profile-summary returns default profile ---
+  await testAsync('profile-summary returns default state when no profile exists', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'user-profiling', 'index.js'));
+    const hooks = await mod.default({ worktree: tmpDir });
+
+    const result = await hooks.tool['profile-summary'].execute({}, {});
+    const parsed = JSON.parse(result);
+
+    assert(typeof parsed.communication === 'object', 'must have communication object');
+    assert(typeof parsed.preferences === 'object', 'must have preferences array');
+    assert(typeof parsed.commonTasks === 'object', 'must have commonTasks array');
+    assert(typeof parsed.tools === 'object', 'must have tools array');
+    assert(typeof parsed.sessionCount === 'number', 'must have session count');
+  });
+
+  // --- 10.5 profile-preference stores and retrieves ---
+  await testAsync('profile-preference records a preference and it appears in summary', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'user-profiling', 'index.js'));
+    const hooks = await mod.default({ worktree: tmpDir });
+
+    const prefResult = await hooks.tool['profile-preference'].execute({
+      category: 'communication',
+      key: 'verbosity',
+      value: 'concise',
+    }, {});
+
+    const prefParsed = JSON.parse(prefResult);
+    assert(prefParsed.success === true, 'must succeed');
+    assert(prefParsed.message.includes('concise'), 'message must confirm the value');
+
+    // Verify it appears in summary
+    const summaryResult = await hooks.tool['profile-summary'].execute({}, {});
+    const summaryParsed = JSON.parse(summaryResult);
+    assert(summaryParsed.communication.verbosity === 'concise', 'verbosity must be stored');
+    assert(summaryParsed.preferences.length >= 1, 'must have at least 1 preference');
+  });
+
+  // --- 10.6 profile-preference supports multiple categories ---
+  await testAsync('profile-preference stores preferences in different categories', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'user-profiling', 'index.js'));
+    const hooks = await mod.default({ worktree: tmpDir });
+
+    await hooks.tool['profile-preference'].execute({
+      category: 'tools',
+      key: 'preferred_language',
+      value: 'python',
+    }, {});
+
+    const result = await hooks.tool['profile-summary'].execute({}, {});
+    const parsed = JSON.parse(result);
+    assert(parsed.preferences.length >= 2, 'must have at least 2 preferences');
+    const toolPref = parsed.preferences.find(p => p.category === 'tools');
+    assert(toolPref !== undefined, 'must have tools category preference');
+    assert(toolPref.value === 'python', 'value must be python');
+  });
+
+  // --- 10.7 profile-insights generates insights ---
+  await testAsync('profile-insights runs without error and returns structured data', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'user-profiling', 'index.js'));
+    const hooks = await mod.default({ worktree: tmpDir });
+
+    const result = await hooks.tool['profile-insights'].execute({}, {});
+    const parsed = JSON.parse(result);
+
+    assert(parsed.success === true, 'must succeed');
+    assert(typeof parsed.profile === 'object', 'must have profile object');
+    assert(typeof parsed.profile.communication === 'object', 'must have communication data');
+    assert(typeof parsed.profile.totalSessions === 'number', 'must have session count');
+  });
+
+  // --- 10.8 System transform does not throw ---
+  await testAsync('user-profiling system.transform handles missing profile gracefully', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'user-profiling', 'index.js'));
+    const hooks = await mod.default({ worktree: tmpDir });
+
+    const xfrm = hooks['experimental.chat.system.transform'];
+    const input = { messages: [{ role: 'user', content: 'hello' }] };
+    const output = { system: [] };
+
+    // Should not throw
+    await xfrm(input, output);
+  });
+
+  // --- 10.9 Messages transform does not throw ---
+  await testAsync('user-profiling messages.transform tracks messages without error', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'user-profiling', 'index.js'));
+    const hooks = await mod.default({ worktree: tmpDir });
+
+    const xfrm = hooks['experimental.chat.messages.transform'];
+    const input = {
+      sessionID: 'test-profile-session',
+      messages: [
+        { role: 'user', content: 'Can you help me implement an API endpoint in Python?' },
+        { role: 'assistant', content: 'Sure! Let me help you with that.' },
+      ],
+    };
+    const output = { messages: [...input.messages] };
+
+    // Should not throw
+    await xfrm(input, output);
+  });
+
+  rmSync(tmpDir, { recursive: true, force: true });
+}
+
+// ───────────────────────────────────────────────────────────
 // Main
 // ───────────────────────────────────────────────────────────
 
@@ -1239,6 +1705,9 @@ async function main() {
     await testSystemTransform();
     await testPersonaPlugin();
     await testMemoryConsolidation();
+    await testRemoteExecution();
+    await testSkillLifecycle();
+    await testUserProfiling();
     await testOpenCodeIntegration();
   } catch (e) {
     console.log(`\n💥 Unexpected test error: ${e.message}`);

@@ -1,0 +1,12 @@
+{
+  "name": "opencode-user-profiling",
+  "version": "0.1.0",
+  "description": "Longitudinal user model — learns communication style, preferences, and task patterns from session data",
+  "type": "module",
+  "exports": {
+    ".": "./index.js"
+  },
+  "dependencies": {
+    "@opencode-ai/plugin": "^1"
+  }
+}

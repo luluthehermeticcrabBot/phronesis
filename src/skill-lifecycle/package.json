@@ -1,0 +1,12 @@
+{
+  "name": "opencode-skill-lifecycle",
+  "version": "0.1.0",
+  "description": "Production-grade skill management — versioning, usage metrics, auto-patching, deprecation, pruning",
+  "type": "module",
+  "exports": {
+    ".": "./index.js"
+  },
+  "dependencies": {
+    "@opencode-ai/plugin": "^1"
+  }
+}
