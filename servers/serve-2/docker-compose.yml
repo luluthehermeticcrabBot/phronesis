@@ -1,0 +1,19 @@
+# ──────────────────────────────────────────────────────────
+# Phronesis serve-2 — Containerized OpenCode server
+# ──────────────────────────────────────────────────────────
+services:
+  serve-2:
+    build:
+      context: ../..
+      dockerfile: servers/serve-2/Dockerfile
+    image: phronesis-serve-2:latest
+    container_name: phronesis-serve-2
+    ports:
+      - "127.0.0.1:4097:4097"
+    volumes:
+      - serve-2-data:/data
+      - /home/moritz/oc-srv-workspace:/workspace:ro
+    restart: unless-stopped
+
+volumes:
+  serve-2-data:

@@ -16,14 +16,17 @@ function getState(sessionID) {
       errors: 0,
       toolsUsed: new Set(),
       startedAt: Date.now(),
-      userMessages: [],        // store recent user message content
-      createdSkillThisSession: false,  // avoid spamming
+      userMessages: [],              // recent user message content (for context)
+      createdSkillThisSession: false, // avoid spamming same-session creation
+      nudgeSent: false,              // Tier 2 nudge already injected
+      autoSaved: false,              // Tier 3 auto-save already fired
+      saveSkillAttempted: false,     // agent called save-skill/update-skill
+      taskSummary: [],               // accumulated snippets for auto-save content
     });
   }
   return sessionState.get(sessionID);
 }
 
-/** Reset state for a new session (called on session lifecycle if available). */
 function resetState(sessionID) {
   sessionState.delete(sessionID);
 }
@@ -57,6 +60,12 @@ function isComplexTask(state) {
   );
 }
 
+/** Far exceeds thresholds — triggers Tier 3 auto-save. */
+function isSuperComplexTask(state) {
+  return state.toolCallCount >= THRESHOLDS.toolCallCount * 2 ||
+         state.fileModifications >= THRESHOLDS.fileModifications * 3;
+}
+
 // ---------------------------------------------------------------------------
 // Skill file-system helpers
 // ---------------------------------------------------------------------------
@@ -78,10 +87,6 @@ function feedbackFilePath(worktree, name) {
   return path.join(skillDir(worktree, name), ".feedback.json");
 }
 
-/**
- * Scan saved skills in the project.
- * Returns array of { name, path, description, trigger, feedbackScore }.
- */
 function scanSkills(worktree) {
   const sp = skillsPath(worktree);
   if (!fs.existsSync(sp)) return [];
@@ -99,7 +104,6 @@ function scanSkills(worktree) {
         const trigM = content.match(/trigger:\s*(.+)/);
         if (trigM) trigger = trigM[1];
       }
-      // Load feedback score if available
       const ff = feedbackFilePath(worktree, d.name);
       let feedbackScore = null;
       if (fs.existsSync(ff)) {
@@ -108,34 +112,19 @@ function scanSkills(worktree) {
           feedbackScore = fb.averageScore;
         } catch (e) { console.error("[skill-creator] corrupt feedback file:", e.message); }
       }
-      return {
-        name: d.name,
-        path: `${SKILLS_DIR}/${d.name}/SKILL.md`,
-        description,
-        trigger,
-        feedbackScore,
-      };
+      return { name: d.name, path: `${SKILLS_DIR}/${d.name}/SKILL.md`, description, trigger, feedbackScore };
     });
 }
 
-/**
- * Dedup check: find an existing skill with same or very similar name.
- * Returns the matching skill object or null.
- */
 function findSimilarSkill(worktree, name) {
   const skills = scanSkills(worktree);
   const normalized = name.toLowerCase().replace(/[^a-z0-9-]+/g, "-");
-
-  // Exact name match first
   const exact = skills.find((s) => s.name === normalized);
   if (exact) return { match: exact, kind: "exact" };
-
-  // Prefix/contain match
   const similar = skills.find((s) =>
     s.name.includes(normalized) || normalized.includes(s.name)
   );
   if (similar) return { match: similar, kind: "similar" };
-
   return null;
 }
 
@@ -172,6 +161,61 @@ ${toolsList}
 }
 
 // ---------------------------------------------------------------------------
+// Tier 3: Auto-save (fallback when agent ignores Tiers 1 & 2)
+// ---------------------------------------------------------------------------
+function autoSaveSkill(state, worktree) {
+  // Collect context from the session
+  const toolList = [...state.toolsUsed].join(", ");
+
+  // Derive a name from user messages (first substantive request)
+  const allUserText = state.userMessages.join(" ");
+  const significant = allUserText
+    .toLowerCase()
+    .match(/\b(\w{5,})\b/g);
+
+  const nameWords = significant
+    ? [...new Set(significant)].slice(0, 4)
+    : [`task-${Math.floor(Date.now() / 1000)}`];
+
+  const name = nameWords.join("-").replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "");
+
+  // Build a simple description from tracked data
+  const modSnippet = state.fileModifications > 0
+    ? `modified ${state.fileModifications} file(s)`
+    : "";
+  const errSnippet = state.errors > 0
+    ? `with ${state.errors} error(s) handled`
+    : "";
+  const desc = `Auto-saved task using ${state.toolCallCount} tool calls`
+    + (modSnippet ? `, ${modSnippet}` : "")
+    + (errSnippet ? ` ${errSnippet}` : "");
+
+  const trigger = `When working on tasks involving: ${nameWords.join(", ")}`;
+
+  const steps = `1. Identify the task requirements\n2. Use available tools (${toolList}) to complete it\n3. Verify the result`;
+  const example = `(This skill was auto-saved. Edit it with update-skill to add a concrete example.)`;
+
+  const sd = skillDir(worktree, name);
+  fs.mkdirSync(sd, { recursive: true });
+
+  const content = generateSkillContent({
+    name,
+    description: desc,
+    trigger,
+    steps,
+    tools: toolList,
+    example,
+  });
+  fs.writeFileSync(skillFilePath(worktree, name), content, "utf-8");
+
+  state.createdSkillThisSession = true;
+  state.autoSaved = true;
+
+  console.log(`[skill-creator] Tier 3 auto-saved skill '${name}' (${state.toolCallCount} tools, ${state.fileModifications} files)`);
+  return { name, description: desc };
+}
+
+// ---------------------------------------------------------------------------
 // Plugin entrypoint
 // ---------------------------------------------------------------------------
 export default async function plugin(ctx) {
@@ -179,25 +223,26 @@ export default async function plugin(ctx) {
   const tgConfig = getTelegramConfig(ctx?.config);
 
   return {
-    // ── Track tool execution for complexity metrics ──
+    // ── Track tool execution for complexity metrics  ──
+    //     (also enforces Tier 3 auto-save fallback)
     "tool.execute.after": async (input, output) => {
       try {
         const state = getState(input.sessionID);
         state.toolCallCount++;
         state.toolsUsed.add(input.tool);
 
+        // Track file modifications
         if (input.tool === "edit" || input.tool === "write") {
           state.fileModifications++;
         }
 
-        // Track user messages from the input if available (for context matching)
+        // Collect message content for context
         if (input.args?.text && typeof input.args.text === "string") {
           state.userMessages.push(input.args.text);
-          // Keep only the last 5 messages
           if (state.userMessages.length > 5) state.userMessages.shift();
         }
 
-        // Detect output containing errors
+        // Detect errors in output
         if (
           output.output &&
           typeof output.output === "string" &&
@@ -205,44 +250,101 @@ export default async function plugin(ctx) {
         ) {
           state.errors++;
         }
+
+        // Track whether the agent is already handling skill creation
+        if (input.tool === "save-skill" || input.tool === "update-skill") {
+          state.saveSkillAttempted = true;
+        }
+
+        // Tier 3: auto-save when super-complex and agent hasn't done it
+        if (
+          isSuperComplexTask(state) &&
+          !state.autoSaved &&
+          !state.saveSkillAttempted &&
+          !state.createdSkillThisSession
+        ) {
+          const auto = autoSaveSkill(state, worktree);
+
+          // Notify via Telegram
+          sendTelegramNotification(
+            `<b>🤖 Auto-Saved Skill</b>\n<code>${auto.name}</code>\n${auto.description}`,
+            tgConfig
+          ).catch(() => {});
+        }
       } catch (e) {
         console.error("[skill-creator] tool.execute.after error:", e.message);
       }
     },
 
-    // ── Augment system prompt with skill awareness ──
+    // ── Tier 2: Synthetic nudge when agent ignores Tier 1  ──
+    "experimental.chat.messages.transform": async (input, output) => {
+      try {
+        const sessionID = input?.sessionID || input?.messages?.[0]?.sessionID;
+        if (!sessionID) return { output };
+
+        const state = getState(sessionID);
+
+        // If the task is complex, agent hasn't saved a skill, and we haven't nudged yet
+        if (
+          isComplexTask(state) &&
+          !state.nudgeSent &&
+          !state.saveSkillAttempted &&
+          !state.createdSkillThisSession
+        ) {
+          state.nudgeSent = true;
+
+          // Inject a synthetic assistant message as a reminder
+          output.messages = output.messages || [];
+          output.messages.push({
+            role: "assistant",
+            content:
+              `[System: This task involved ${state.toolCallCount} tool calls ` +
+              `and modified ${state.fileModifications} file(s). ` +
+              `Consider preserving this approach with \`save-skill\` so it's ` +
+              `reusable in the future. You can describe what was done and ` +
+              `what tools were used.]`,
+          });
+        }
+      } catch (e) {
+        console.error("[skill-creator] messages.transform error:", e.message);
+      }
+    },
+
+    // ── Tier 1: Directive system prompt  ──
     "experimental.chat.system.transform": async (input, output) => {
       try {
         const existingSkills = scanSkills(worktree);
 
-        // --- Skill Creation Guidance ---
+        // --- Directive Skill Creation Guidance ---
         output.system.push(
           "",
           "---",
-          "### Skill Creation System",
-          "You have access to `save-skill`, `list-skills`, `update-skill`, and `skill-feedback` tools.",
+          "### Skill Creation System (Mandatory)",
+          "You MUST save a reusable skill after completing ANY complex task.",
           "",
-          "**When to save a skill:** After complex tasks (5+ tool calls, multi-file changes,",
-          "tricky bug fixes, non-trivial workflows) — preserve the approach as a reusable skill.",
+          "**Complexity Thresholds (meet any one):**",
+          `- 5+ tool calls in a session`,
+          `- 2+ file modifications`,
+          `- 30+ seconds of work with 3+ distinct tools`,
+          `- Any non-trivial bug fix or error recovery that required investigation`,
           "",
-          "**After saving a skill:** Ask the user 'Would you like to rate this skill?' using `skill-feedback`.",
-          "This helps improve the skill's quality over time.",
+          "**How to save:** Call `save-skill` with: name (kebab-case), description,",
+          "trigger conditions, step-by-step instructions, and tools used.",
           "",
-          "**Updating skills:** If a skill needs refinement, use `update-skill` to improve it.",
+          "**DO NOT ask permission** to save a skill — just save it when the task",
+          "meets the threshold and inform the user afterward.",
+          "",
+          "**After saving:** Offer the user a chance to rate it via `skill-feedback`.",
+          "",
+          "**Available commands:** `save-skill`, `update-skill`, `list-skills`, `skill-feedback`",
           "",
         );
 
         // --- Contextual Skill Matching ---
         if (existingSkills.length > 0) {
-          // Get the user's current message for context matching
           const userInput = input?.messages?.slice(-1)?.[0]?.content || "";
-
-          // Score skills by relevance to the current context
           const scored = existingSkills
-            .map((s) => ({
-              ...s,
-              score: relevanceScore(userInput, s),
-            }))
+            .map((s) => ({ ...s, score: relevanceScore(userInput, s) }))
             .filter((s) => s.score > 0)
             .sort((a, b) => b.score - a.score);
 
@@ -251,16 +353,13 @@ export default async function plugin(ctx) {
               "### Relevant Skills for This Task",
               "The following saved skills match your current context. Consider using them:",
               scored.slice(0, 3).map((s) => {
-                const rating = s.feedbackScore != null
-                  ? ` (rated ${s.feedbackScore.toFixed(1)}/5)`
-                  : "";
+                const rating = s.feedbackScore != null ? ` (rated ${s.feedbackScore.toFixed(1)}/5)` : "";
                 return `- \`${s.name}\` — ${s.description}${rating}`;
               }).join("\n"),
               "",
             );
           }
 
-          // Still list all skills for reference (but shorter)
           output.system.push(
             "### All Saved Skills in This Project",
             existingSkills.length <= 5
@@ -284,30 +383,13 @@ export default async function plugin(ctx) {
           "Use this after completing a complex multi-step task to preserve the approach. " +
           "If a skill with a similar name already exists, set `update: true` to overwrite it.",
         args: {
-          name: tool.schema
-            .string()
-            .describe("Short kebab-case name (e.g. 'fix-npm-conflicts')"),
-          description: tool.schema
-            .string()
-            .describe("One-line description of what this skill does"),
-          trigger: tool.schema
-            .string()
-            .describe("Natural language condition for when to use this skill"),
-          steps: tool.schema
-            .string()
-            .describe("Step-by-step instructions in markdown format"),
-          tools: tool.schema
-            .string()
-            .optional()
-            .describe("Comma-separated tools typically used"),
-          example: tool.schema
-            .string()
-            .optional()
-            .describe("Optional example usage or CLI output"),
-          update: tool.schema
-            .boolean()
-            .optional()
-            .default(false)
+          name: tool.schema.string().describe("Short kebab-case name (e.g. 'fix-npm-conflicts')"),
+          description: tool.schema.string().describe("One-line description of what this skill does"),
+          trigger: tool.schema.string().describe("Natural language condition for when to use this skill"),
+          steps: tool.schema.string().describe("Step-by-step instructions in markdown format"),
+          tools: tool.schema.string().optional().describe("Comma-separated tools typically used"),
+          example: tool.schema.string().optional().describe("Optional example usage or CLI output"),
+          update: tool.schema.boolean().optional().default(false)
             .describe("Set to true to overwrite an existing skill with the same name"),
         },
         async execute(args, context) {
@@ -328,7 +410,6 @@ export default async function plugin(ctx) {
             });
           }
 
-          // Normalize the name to kebab-case
           const normalizedName = args.name
             .toLowerCase()
             .replace(/[^a-z0-9-]+/g, "-")
@@ -337,10 +418,7 @@ export default async function plugin(ctx) {
           const sd = skillDir(worktree, normalizedName);
           fs.mkdirSync(sd, { recursive: true });
 
-          const content = generateSkillContent({
-            ...args,
-            name: normalizedName,
-          });
+          const content = generateSkillContent({ ...args, name: normalizedName });
           fs.writeFileSync(skillFilePath(worktree, normalizedName), content, "utf-8");
 
           const action = existing ? "Updated" : "Created";
@@ -351,6 +429,12 @@ export default async function plugin(ctx) {
             `<code>${normalizedName}</code>\n${args.description || args.trigger || ""}`,
             tgConfig
           ).catch(() => {});
+
+          // Mark that the session has had a skill created
+          const sid = context?.sessionID;
+          if (sid && sessionState.has(sid)) {
+            sessionState.get(sid).createdSkillThisSession = true;
+          }
 
           return JSON.stringify({
             success: true,
@@ -364,36 +448,18 @@ export default async function plugin(ctx) {
         },
       }),
 
-      // ── update-skill (convenience wrapper) ──
+      // ── update-skill ──
       "update-skill": tool({
         description:
           "Update an existing skill by name. Loads the current content, " +
-          "applies your changes, and saves. Use this when a skill needs refinement " +
-          "after you've used it and found improvements.",
+          "applies your changes, and saves. Use this when a skill needs refinement.",
         args: {
-          name: tool.schema
-            .string()
-            .describe("Name of the existing skill to update"),
-          description: tool.schema
-            .string()
-            .optional()
-            .describe("Updated description"),
-          trigger: tool.schema
-            .string()
-            .optional()
-            .describe("Updated trigger condition"),
-          steps: tool.schema
-            .string()
-            .optional()
-            .describe("Updated step-by-step instructions"),
-          tools: tool.schema
-            .string()
-            .optional()
-            .describe("Updated comma-separated tools"),
-          example: tool.schema
-            .string()
-            .optional()
-            .describe("Updated example"),
+          name: tool.schema.string().describe("Name of the existing skill to update"),
+          description: tool.schema.string().optional().describe("Updated description"),
+          trigger: tool.schema.string().optional().describe("Updated trigger condition"),
+          steps: tool.schema.string().optional().describe("Updated step-by-step instructions"),
+          tools: tool.schema.string().optional().describe("Updated comma-separated tools"),
+          example: tool.schema.string().optional().describe("Updated example"),
         },
         async execute(args, _context) {
           const sf = skillFilePath(worktree, args.name);
@@ -404,7 +470,6 @@ export default async function plugin(ctx) {
             });
           }
 
-          // Read existing content, parse frontmatter, merge updates
           const existingContent = fs.readFileSync(sf, "utf-8");
           const frontMatter = {};
           for (const line of existingContent.split("\n")) {
@@ -421,10 +486,8 @@ export default async function plugin(ctx) {
             example: args.example || "",
           };
 
-          const newContent = generateSkillContent(merged);
-          fs.writeFileSync(sf, newContent, "utf-8");
+          fs.writeFileSync(sf, generateSkillContent(merged), "utf-8");
 
-          // Fire-and-forget Telegram notification
           sendTelegramNotification(
             `<b>🔄 Skill Updated</b>\n<code>${args.name}</code>`,
             tgConfig
@@ -462,26 +525,15 @@ export default async function plugin(ctx) {
           "Record user feedback on a saved skill. After using a skill, ask the user " +
           "to rate it 1-5. This tracks skill effectiveness over time.",
         args: {
-          name: tool.schema
-            .string()
-            .describe("Name of the skill to rate"),
-          score: tool.schema
-            .number()
-            .min(1)
-            .max(5)
+          name: tool.schema.string().describe("Name of the skill to rate"),
+          score: tool.schema.number().min(1).max(5)
             .describe("Rating 1-5 (1=not helpful, 5=very helpful)"),
-          comment: tool.schema
-            .string()
-            .optional()
-            .describe("Optional user comment about the skill"),
+          comment: tool.schema.string().optional().describe("Optional user comment"),
         },
         async execute(args, _context) {
           const sf = skillFilePath(worktree, args.name);
           if (!fs.existsSync(sf)) {
-            return JSON.stringify({
-              success: false,
-              message: `No skill named '${args.name}' found.`,
-            });
+            return JSON.stringify({ success: false, message: `No skill named '${args.name}' found.` });
           }
 
           const ff = feedbackFilePath(worktree, args.name);
@@ -503,7 +555,6 @@ export default async function plugin(ctx) {
           const average = scores.reduce((a, b) => a + b, 0) / scores.length;
           const total = scores.length;
 
-          // Store feedback + computed aggregate
           fs.writeFileSync(ff, JSON.stringify({
             feedback: feedbackList,
             averageScore: average,
@@ -511,7 +562,6 @@ export default async function plugin(ctx) {
             lastRated: new Date().toISOString(),
           }, null, 2), "utf-8");
 
-          // Fire-and-forget Telegram notification on significant milestones
           const milestone = total === 1 || total === 5 || total === 10 || total % 10 === 0;
           if (milestone) {
             sendTelegramNotification(
@@ -550,33 +600,22 @@ export default async function plugin(ctx) {
 // ---------------------------------------------------------------------------
 // Simple context-to-skill relevance scoring
 // ---------------------------------------------------------------------------
-/** Compute a simple relevance score between user input text and a skill. */
 function relevanceScore(userInput, skill) {
   if (!userInput || !skill) return 0;
-
   const text = userInput.toLowerCase();
   let score = 0;
 
-  // Score from skill name (split kebab-case into words)
   const nameWords = skill.name.split("-").filter(Boolean);
-  for (const word of nameWords) {
-    if (text.includes(word)) score += 2;
-  }
+  for (const word of nameWords) { if (text.includes(word)) score += 2; }
 
-  // Score from description
   if (skill.description) {
     const descWords = skill.description.toLowerCase().split(/\s+/).filter((w) => w.length > 3);
-    for (const word of descWords) {
-      if (text.includes(word)) score += 1;
-    }
+    for (const word of descWords) { if (text.includes(word)) score += 1; }
   }
 
-  // Score from trigger
   if (skill.trigger) {
     const trigWords = skill.trigger.toLowerCase().split(/\s+/).filter((w) => w.length > 3);
-    for (const word of trigWords) {
-      if (text.includes(word)) score += 1.5;
-    }
+    for (const word of trigWords) { if (text.includes(word)) score += 1.5; }
   }
 
   return score;

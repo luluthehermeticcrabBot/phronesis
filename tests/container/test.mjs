@@ -7,7 +7,7 @@
 
 import { createRequire } from 'module';
 import { join, dirname } from 'path';
-import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'fs';
+import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, readdirSync } from 'fs';
 import { homedir, tmpdir } from 'os';
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
@@ -123,7 +123,15 @@ async function testModuleParsing() {
     assert(tool.description.includes('feedback'), 'description must mention feedback');
   });
 
-  // 1.6 Test tool.execute.after tracking logic
+  // 1.6 Verify messages.transform hook (Tier 2)
+  await testAsync('skill-creator has messages.transform hook for Tier 2 nudge', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'skill-creator', 'index.js'));
+    const hooks = await mod.default({});
+    const hook = hooks['experimental.chat.messages.transform'];
+    assert(typeof hook === 'function', 'messages.transform hook must be a function');
+  });
+
+  // 1.7 Test tool.execute.after tracking logic
   await testAsync('tool.execute.after tracks complexity state', async () => {
     const mod = await import(join(__dirname, '..', '..', 'src', 'skill-creator', 'index.js'));
     const hooks = await mod.default({});
@@ -578,7 +586,7 @@ async function testSystemTransform() {
     assert(text.includes('save-skill'), 'must mention save-skill');
     assert(text.includes('update-skill'), 'must mention update-skill');
     assert(text.includes('skill-feedback'), 'must mention skill-feedback');
-    assert(text.includes('When to save a skill'), 'must include guidance on when to save');
+    assert(text.includes('Complexity Thresholds'), 'must include guidance on when to save');
   });
 
   // --- 4.2 System transform lists relevant skills ---
@@ -632,6 +640,63 @@ async function testSystemTransform() {
     assert(!text.includes('Relevant Skills'), 'should not have relevant skills section when empty');
 
     rmSync(emptyDir, { recursive: true, force: true });
+  });
+
+  // --- 4.4 Tier 2 nudge injects synthetic message on complex task ---
+  await testAsync('messages.transform injects nudge when task is complex and agent hasn\'t saved skill', async () => {
+    const mod = await import(join(__dirname, '..', '..', 'src', 'skill-creator', 'index.js'));
+    const hooks = await mod.default({});
+
+    // Simulate the tool tracker to build complexity
+    const tracker = hooks['tool.execute.after'];
+    const sessionID = 'nudge-test-' + Date.now();
+    for (let i = 0; i < 6; i++) {
+      await tracker(
+        { sessionID, tool: 'bash', args: { text: 'test command' } },
+        { output: 'ok' }
+      );
+    }
+
+    // Now trigger messages.transform — should inject nudge
+    const xfrm = hooks['experimental.chat.messages.transform'];
+    const input = { sessionID, messages: [{ role: 'user', content: 'test' }] };
+    const output = { messages: [] };
+
+    await xfrm(input, output);
+
+    const text = (output.messages || []).map(m => m.content).join('\n');
+    assert(text.includes('save-skill') || text.includes('6 tool calls'), 'nudge should mention saving the approach');
+  });
+
+  // --- 4.5 Tier 3 auto-save fires on super-complex task without agent action ---
+  await testAsync('Tier 3 auto-save fires when super-complex and agent hasn\'t saved skill', async () => {
+    const tmpDir = join(tmpdir(), 'phronesis-auto-' + Date.now());
+    mkdirSync(tmpDir, { recursive: true });
+
+    const mod = await import(join(__dirname, '..', '..', 'src', 'skill-creator', 'index.js'));
+    const hooks = await mod.default({ worktree: tmpDir });
+
+    const tracker = hooks['tool.execute.after'];
+    const sessionID = 'auto-test-' + Date.now();
+
+    // Simulate 10+ tool calls (super-complex threshold: 10)
+    for (let i = 0; i < 11; i++) {
+      const text = i % 2 === 0 ? 'fix the deployment issue' : 'check the logs';
+      await tracker(
+        { sessionID, tool: i === 3 ? 'edit' : 'bash', args: { text } },
+        { output: i === 5 ? 'error happened' : 'ok' }
+      );
+    }
+
+    // Verify auto-save created a SKILL.md in the skills dir
+    const skillsPath = join(tmpDir, '.opencode', 'skills');
+    const exists = existsSync(skillsPath);
+    const dirs = exists ? readdirSync(skillsPath) : [];
+    const hasSkill = dirs.some(d => existsSync(join(skillsPath, d, 'SKILL.md')));
+
+    assert(hasSkill, 'Tier 3 should have auto-saved a skill');
+
+    rmSync(tmpDir, { recursive: true, force: true });
   });
 
   rmSync(tmpDir, { recursive: true, force: true });
