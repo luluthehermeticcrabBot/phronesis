@@ -535,7 +535,7 @@ export default async function plugin(ctx) {
           "",
         );
       } catch (e) {
-        // Never let hook failures propagate
+        console.error("[persona] system.transform error:", e.message);
       }
     },
 
@@ -563,7 +563,7 @@ export default async function plugin(ctx) {
           }
         }
       } catch (e) {
-        // Never let hook failures propagate
+        console.error("[persona] messages.transform error:", e.message);
       }
     },
 

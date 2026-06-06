@@ -143,11 +143,15 @@ async function pushToSupermemory(payload) {
     if (pluginConfig.supermemory_api_key) {
       headers["Authorization"] = `Bearer ${pluginConfig.supermemory_api_key}`;
     }
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
     const res = await fetch(pluginConfig.supermemory_url, {
       method: "POST",
       headers,
       body: JSON.stringify(payload),
+      signal: controller.signal,
     });
+    clearTimeout(timeout);
     return { pushed: res.ok, status: res.status };
   } catch (e) {
     return { pushed: false, reason: e.message };
@@ -276,8 +280,8 @@ export default async function plugin(ctx) {
             last_seen = datetime('now'),
             tool_count = COALESCE(seen_sessions.tool_count, 0) + 1
         `).run(sid, input?.title || "");
-      } catch {
-        // Never let hook failures propagate
+      } catch (e) {
+        console.error("[memory-consolidation] session.compacting error:", e.message);
       }
     },
 
@@ -340,8 +344,8 @@ export default async function plugin(ctx) {
         );
 
         output.system.push(...parts);
-      } catch {
-        // Never let hook failures propagate
+      } catch (e) {
+        console.error("[memory-consolidation] system.transform error:", e.message);
       }
     },
 
@@ -665,11 +669,6 @@ export default async function plugin(ctx) {
             .optional()
             .default(5)
             .describe("Number of recent unconsolidated sessions to consider"),
-          mark_consolidated: tool.schema
-            .boolean()
-            .optional()
-            .default(false)
-            .describe("Set true to mark reviewed sessions as consolidated when done"),
         },
         async execute(args, _context) {
           try {
@@ -704,8 +703,7 @@ export default async function plugin(ctx) {
               guidance:
                 `Found ${sessions.length} unconsolidated sessions. Review the sessions above and ` +
                 `use \`add-fact\` to store any important knowledge you find. ` +
-                `Set mark_consolidated=true and run consolidate-memory again when done, ` +
-                `or use \`mark-consolidated <session_id>\` (via the tool) to mark individually.`,
+                `Then use \`mark-consolidated\` to mark sessions as processed.`,
             });
           } catch (e) {
             return JSON.stringify({ success: false, message: e.message });

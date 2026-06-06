@@ -27,6 +27,17 @@ function resetState(sessionID) {
   sessionState.delete(sessionID);
 }
 
+// Periodically clean stale sessions (>24h inactivity)
+const CLEANUP_INTERVAL = 60 * 60 * 1000; // 1 hour
+setInterval(() => {
+  const now = Date.now();
+  for (const [sid, state] of sessionState) {
+    if (now - state.startedAt > 24 * 60 * 60 * 1000) {
+      sessionState.delete(sid);
+    }
+  }
+}, CLEANUP_INTERVAL).unref();
+
 // ---------------------------------------------------------------------------
 // Complexity thresholds
 // ---------------------------------------------------------------------------
@@ -94,7 +105,7 @@ function scanSkills(worktree) {
         try {
           const fb = JSON.parse(fs.readFileSync(ff, "utf-8"));
           feedbackScore = fb.averageScore;
-        } catch { /* ignore corrupt feedback files */ }
+        } catch (e) { console.error("[skill-creator] corrupt feedback file:", e.message); }
       }
       return {
         name: d.name,
@@ -193,7 +204,7 @@ export default async function plugin(ctx) {
           state.errors++;
         }
       } catch (e) {
-        // Never let hook failures propagate to the agent
+        console.error("[skill-creator] tool.execute.after error:", e.message);
       }
     },
 
@@ -257,7 +268,7 @@ export default async function plugin(ctx) {
           );
         }
       } catch (e) {
-        // Never let hook failures propagate
+        console.error("[skill-creator] system.transform error:", e.message);
       }
     },
 

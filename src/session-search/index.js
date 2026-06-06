@@ -8,27 +8,6 @@ import { readFileSync, existsSync, mkdirSync } from 'fs';
 const require = createRequire(import.meta.url);
 
 // ---------------------------------------------------------------------------
-// DB helpers — uses built-in Node.js sqlite (experimental) or better-sqlite3
-// ---------------------------------------------------------------------------
-
-function openDb(path) {
-  // Prefer better-sqlite3 if available (bundled by opencode), fallback to
-  // built-in node:sqlite (Node 22+) or a simple JSON cache.
-  try {
-    const dblite = require('better-sqlite3');
-    const db = new dblite(path, { readonly: true, fileMustExist: true });
-    // Enable WAL-friendly reads
-    db.pragma('journal_mode = WAL');
-    return { db, close: () => db.close(), query, all, get };
-  } catch {
-    // Fallback: use node:sqlite (experimental, Node 22+)
-    const { DatabaseSync } = require('node:sqlite');
-    const db = new DatabaseSync(path, { readOnly: true });
-    return { db, close: () => db.close(), query, all: db.prepare.bind(db), get: db.prepare.bind(db) };
-  }
-}
-
-// ---------------------------------------------------------------------------
 // FTS5 index builder
 // ---------------------------------------------------------------------------
 
