@@ -164,6 +164,7 @@ async function pushToSupermemory(payload) {
 // ---------------------------------------------------------------------------
 let heartbeatHandle = null;
 let consolidationOverdue = false;
+let overdueAlertSent = false; // throttle: send overdue Telegram alert once per cycle
 
 function startHeartbeat() {
   if (heartbeatHandle) clearInterval(heartbeatHandle);
@@ -317,14 +318,17 @@ export default async function plugin(ctx) {
           );
           parts.push("");
 
-          // Fire-and-forget Telegram alert (throttled via overdue flag — only fires once per interval)
-          sendTelegramNotification(
-            `<b>🔔 Consolidation Overdue</b>\n` +
-            `${unconsolidated} session(s) unconsolidated. ` +
-            `Interval: ${pluginConfig.consolidation_interval_hours}h. ` +
-            `Use \`consolidate-memory\` to extract knowledge.`,
-            tgConfig
-          ).catch(() => {});
+          // Fire-and-forget Telegram alert (throttled — once per overdue cycle)
+          if (!overdueAlertSent) {
+            overdueAlertSent = true;
+            sendTelegramNotification(
+              `<b>🔔 Consolidation Overdue</b>\n` +
+              `${unconsolidated} session(s) unconsolidated. ` +
+              `Interval: ${pluginConfig.consolidation_interval_hours}h. ` +
+              `Use \`consolidate-memory\` to extract knowledge.`,
+              tgConfig
+            ).catch(() => {});
+          }
         }
 
         // Inject relevant facts into context
@@ -353,6 +357,11 @@ export default async function plugin(ctx) {
           "**Guideline:** After completing significant work (new patterns, learned preferences, " +
           "environment changes), store a fact so it's available in future sessions. " +
           "The local store persists independently — supermemory is an optional secondary sync.",
+          "",
+          "**Automation Tip:** Use the `schedule_job` tool to set up recurring memory consolidation. " +
+          `Example: schedule a job named \"memory-consolidation\" every ${pluginConfig.consolidation_interval_hours}h ` +
+          'with the prompt: "Review the last few sessions and consolidate any important knowledge using `consolidate-memory` and `add-fact`." ' +
+          "The bot will handle it automatically after that.",
         );
 
         output.system.push(...parts);
@@ -784,6 +793,7 @@ export default async function plugin(ctx) {
             `).run(count);
 
             consolidationOverdue = false;
+            overdueAlertSent = false;
 
             // Fire-and-forget Telegram notification
             sendTelegramNotification(
