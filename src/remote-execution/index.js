@@ -2,6 +2,7 @@ import { tool } from "@opencode-ai/plugin";
 import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { getTelegramConfig, sendTelegramNotification } from "../shared/telegram.js";
 
 // ---------------------------------------------------------------------------
 // Target resolution
@@ -119,6 +120,7 @@ function executeSSH(target, command, timeout) {
 // ---------------------------------------------------------------------------
 export default async function plugin(ctx) {
   const targets = loadTargets();
+  const tgConfig = getTelegramConfig(ctx?.config);
 
   return {
     tool: {
@@ -169,6 +171,11 @@ export default async function plugin(ctx) {
                 success: false,
                 error: `Unsupported target type '${target.type}' for '${args.target}'`,
               });
+          }
+
+          if (tgConfig && (!result.success || result.duration > 30000)) {
+            const icon = result.success ? "⚡" : "❌";
+            sendTelegramNotification(`<b>${icon} Remote Exec</b>\n<code>${args.target}</code>\n${args.command}\nExit: ${result.exitCode} (${result.duration}ms)`, tgConfig).catch(() => {});
           }
 
           return JSON.stringify({

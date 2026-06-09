@@ -1,6 +1,7 @@
 import { tool } from "@opencode-ai/plugin";
 import fs from "node:fs";
 import path from "node:path";
+import { getTelegramConfig, sendTelegramNotification } from "../shared/telegram.js";
 
 // ---------------------------------------------------------------------------
 // File-system layout (parallel to skill-creator)
@@ -163,6 +164,7 @@ function getConsistentCorrections(skillName, threshold = 2) {
 // ---------------------------------------------------------------------------
 export default async function plugin(ctx) {
   const worktree = ctx?.worktree || ctx?.project?.worktree || process.cwd();
+  const tgConfig = getTelegramConfig(ctx?.config);
 
   return {
     // ── Inject lifecycle guidance into system prompt  ──

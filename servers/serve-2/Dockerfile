@@ -21,28 +21,35 @@ RUN OPENCODE_VERSION=$(curl -sL https://api.github.com/repos/anomalyco/opencode/
 WORKDIR /phronesis
 
 # Copy plugins and install dependencies (native compilation)
+COPY src/shared/ ./src/shared/
 COPY src/skill-creator/ ./src/skill-creator/
 COPY src/session-search/ ./src/session-search/
 COPY src/persona/ ./src/persona/
 COPY src/memory-consolidation/ ./src/memory-consolidation/
+COPY src/remote-execution/ ./src/remote-execution/
+COPY src/skill-lifecycle/ ./src/skill-lifecycle/
+COPY src/user-profiling/ ./src/user-profiling/
 
 RUN cd src/skill-creator && npm install 2>&1 | tail -3 && cd ../..
 RUN cd src/session-search && npm install 2>&1 | tail -3 && cd ../..
 RUN cd src/persona && npm install 2>&1 | tail -3 && cd ../..
 RUN cd src/memory-consolidation && npm install 2>&1 | tail -3 && npm rebuild better-sqlite3 2>&1 | tail -3 && cd ../..
+RUN cd src/remote-execution && npm install 2>&1 | tail -3 && cd ../..
+RUN cd src/skill-lifecycle && npm install 2>&1 | tail -3 && cd ../..
+RUN cd src/user-profiling && npm install 2>&1 | tail -3 && cd ../..
 
 # ---- Stage 2: Runtime ----
 FROM docker.io/node:22-bookworm-slim
 
 RUN apt-get update && apt-get install -y \
-    curl jq sqlite3 ca-certificates \
+    curl jq sqlite3 ca-certificates git gh \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /usr/local/bin/opencode /usr/local/bin/opencode
 COPY --from=build /phronesis /phronesis
 
 COPY servers/serve-2/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN chmod +x /entrypoint.sh && echo "entrypoint built $(date)"
 
 # Data directory for isolated opencode.db, plugin DBs
 VOLUME ["/data"]

@@ -1,6 +1,7 @@
 import { tool } from "@opencode-ai/plugin";
 import fs from "node:fs";
 import path from "node:path";
+import { getTelegramConfig, sendTelegramNotification } from "../shared/telegram.js";
 
 // ---------------------------------------------------------------------------
 // Profile storage
@@ -156,6 +157,7 @@ function classifyTask(userMessage) {
 // ---------------------------------------------------------------------------
 export default async function plugin(ctx) {
   const worktree = ctx?.worktree || ctx?.project?.worktree || process.cwd();
+  const tgConfig = getTelegramConfig(ctx?.config);
 
   return {
     // ── Inject profile context into system prompt  ──
@@ -309,6 +311,10 @@ export default async function plugin(ctx) {
 
           writeProfile(worktree, profile);
 
+          if (tgConfig) {
+            sendTelegramNotification(`<b>📋 Preference Recorded</b>\n${args.category}: <code>${args.key}</code> = ${args.value}`, tgConfig).catch(() => {});
+          }
+
           return JSON.stringify({
             success: true,
             message: `Preference recorded: ${args.category} / ${args.key} = ${args.value}`,
@@ -406,6 +412,10 @@ export default async function plugin(ctx) {
 
           profile.sessionCount += 1;
           writeProfile(worktree, profile);
+
+          if (tgConfig && insights.length > 0) {
+            sendTelegramNotification(`<b>📊 Profile Insights</b>\nSession ${profile.sessionCount}\n${insights.join("\n")}`, tgConfig).catch(() => {});
+          }
 
           return JSON.stringify({
             success: true,

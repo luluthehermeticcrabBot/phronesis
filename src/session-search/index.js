@@ -4,6 +4,7 @@ import { createRequire } from 'module';
 import { join, dirname } from 'path';
 import { homedir } from 'os';
 import { readFileSync, existsSync, mkdirSync } from 'fs';
+import { getTelegramConfig, sendTelegramNotification } from "../shared/telegram.js";
 
 const require = createRequire(import.meta.url);
 
@@ -193,7 +194,9 @@ function searchIndex(query, limit = 10) {
 // Plugin entrypoint
 // ---------------------------------------------------------------------------
 
-export default function () {
+export default function (ctx) {
+  const tgConfig = getTelegramConfig(ctx?.config);
+
   // Build index on plugin load (async, fire and forget)
   try {
     rebuildIndex();
@@ -218,6 +221,10 @@ or reference previous work.`,
 
           if (results.length === 0) {
             return `No sessions found matching "${query}". Try different keywords or check that the session search index has been built (it updates automatically).`;
+          }
+
+          if (tgConfig) {
+            sendTelegramNotification(`<b>🔍 Session Search</b>\n<code>${query}</code>\n${results.length} result(s) found`, tgConfig).catch(() => {});
           }
 
           let output = `## Session Search Results\n\n**Query:** ${query}\n\nFound ${results.length} matching session(s):\n\n`;

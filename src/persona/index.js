@@ -1,6 +1,7 @@
 import { tool } from "@opencode-ai/plugin";
 import fs from "node:fs";
 import path from "node:path";
+import { getTelegramConfig, sendTelegramNotification } from "../shared/telegram.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -520,6 +521,7 @@ function buildPersonaGuidance(persona) {
 // ---------------------------------------------------------------------------
 export default async function plugin(ctx) {
   const worktree = ctx?.worktree || ctx?.project?.worktree || process.cwd();
+  const tgConfig = getTelegramConfig(ctx?.config);
 
   return {
     // ── Inject persona into system prompt ──
@@ -637,6 +639,10 @@ export default async function plugin(ctx) {
 
             savePersona(worktree, persona);
 
+            if (tgConfig) {
+              sendTelegramNotification(`<b>👤 Persona Set</b>\n<code>${persona.name}</code>\n${persona.description}`, tgConfig).catch(() => {});
+            }
+
             return JSON.stringify({
               success: true,
               name: persona.name,
@@ -701,6 +707,10 @@ export default async function plugin(ctx) {
 
             savePersona(worktree, persona);
 
+            if (tgConfig) {
+              sendTelegramNotification(`<b>✏️ Persona Edited</b>\n<code>${persona.name}</code>\nFields updated`, tgConfig).catch(() => {});
+            }
+
             return JSON.stringify({
               success: true,
               name: persona.name,
@@ -741,6 +751,10 @@ export default async function plugin(ctx) {
             const persona = importFromSoul(content);
             savePersona(worktree, persona);
 
+            if (tgConfig) {
+              sendTelegramNotification(`<b>📥 SOUL Imported</b>\n<code>${persona.name}</code>\nImported from ${args.path}`, tgConfig).catch(() => {});
+            }
+
             return JSON.stringify({
               success: true,
               name: persona.name,
@@ -777,6 +791,10 @@ export default async function plugin(ctx) {
             fs.mkdirSync(outDir, { recursive: true });
             fs.writeFileSync(outPath, soulContent, "utf-8");
 
+            if (tgConfig) {
+              sendTelegramNotification(`<b>📤 SOUL Exported</b>\n<code>${persona.name}</code>\nExported to ${args.output}`, tgConfig).catch(() => {});
+            }
+
             return JSON.stringify({
               success: true,
               path: path.relative(worktree, outPath) || args.output,
@@ -803,6 +821,10 @@ export default async function plugin(ctx) {
             fs.unlinkSync(fPath);
           }
           cachedPersona = null;
+
+          if (tgConfig) {
+            sendTelegramNotification(`<b>🔄 Persona Reset</b>\nPersona has been reset to factory defaults`, tgConfig).catch(() => {});
+          }
 
           return JSON.stringify({
             success: true,
