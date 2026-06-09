@@ -1,0 +1,63 @@
+# ───────────────────────────────────────────────────────────
+# Phronesis Serve-2 Container
+# Build:  podman build -t phronesis-serve-2 -f tests/container/Dockerfile.serve2 .
+# Run:    See docker-compose or podman command in docs
+# ───────────────────────────────────────────────────────────
+FROM docker.io/node:22-bookworm-slim AS build
+
+RUN apt-get update && apt-get install -y \
+    python3 \
+    make \
+    g++ \
+    git \
+    curl \
+    jq \
+    sqlite3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install OpenCode CLI
+RUN OPENCODE_VERSION=$(curl -sL https://api.github.com/repos/anomalyco/opencode/releases/latest | \
+    grep '"tag_name"' | sed 's/.*"v\([^"]*\)".*/\1/') && \
+    echo "OpenCode version: $OPENCODE_VERSION" && \
+    curl -fsSL "https://github.com/anomalyco/opencode/releases/latest/download/opencode-linux-x64.tar.gz" \
+    -o /tmp/opencode.tar.gz && \
+    tar xzf /tmp/opencode.tar.gz -C /usr/local/bin/ opencode && \
+    rm /tmp/opencode.tar.gz && \
+    opencode --version
+
+WORKDIR /phronesis
+
+# Copy full phronesis source (includes shared/)
+COPY . .
+
+# Install plugin dependencies
+RUN cd src/skill-creator && npm install 2>&1 | tail -5 && cd ../..
+RUN cd src/session-search && npm install 2>&1 | tail -5 && cd ../..
+RUN cd src/persona && npm install 2>&1 | tail -5 && cd ../..
+RUN cd src/memory-consolidation && npm install 2>&1 | tail -5 && npm rebuild better-sqlite3 2>&1 | tail -3 && cd ../..
+RUN cd src/remote-execution && npm install 2>&1 | tail -5 && cd ../..
+RUN cd src/skill-lifecycle && npm install 2>&1 | tail -5 && cd ../..
+RUN cd src/user-profiling && npm install 2>&1 | tail -5 && cd ../..
+
+# ---- Stage 2: Runtime ----
+FROM docker.io/node:22-bookworm-slim
+
+RUN apt-get update && apt-get install -y \
+    curl \
+    jq \
+    sqlite3 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=build /usr/local/bin/opencode /usr/local/bin/opencode
+
+# Copy phronesis source (with shared/)
+COPY --from=build /phronesis /phronesis
+
+# Copy entrypoint
+COPY tests/container/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+VOLUME ["/data"]
+EXPOSE 4097
+
+ENTRYPOINT ["/entrypoint.sh"]
