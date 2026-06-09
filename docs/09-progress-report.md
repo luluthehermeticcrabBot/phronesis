@@ -1,9 +1,9 @@
 # Progress Report
 
 > **Date**: June 2026
-> **Commits**: 10
-> **Tests**: 48/48 passing
-> **Plugins**: 4 deployed
+> **Commits**: 12
+> **Tests**: 78/78 passing
+> **Plugins**: 7 deployed
 > **Gateway**: Telegram (2 instances) + AgentMail MCP
 
 ---
@@ -20,7 +20,9 @@ Phronesis has delivered all planned Phase 🟢 and Phase 🟡 capabilities:
 - **Multi-instance Telegram gateway** with 2 bot instances (Phase 🔴 MVP)
 - **AgentMail MCP** configured for email gateway
 
-All plugins are registered in the workspace `opencode.json` and active during every session. The Telegram gateway routes both bot instances through the same OpenCode server port, giving all Phronesis plugins automatic Telegram availability.
+All 7 plugins are registered in the workspace `opencode.json` and active on bot2 (port 4097) via the `phronesis-serve-2` container. The Telegram gateway routes both bot instances through OpenCode, giving all Phronesis plugins automatic Telegram availability.
+
+**Key milestone**: All plugin tools now have explicit `"allow"` permissions at both top-level and per-agent (build, orchestrator), and agent prompts include structured MUST/SHOULD guidance forcing the model to use memory, skills, profile, and session search tools.
 
 ---
 
@@ -94,6 +96,47 @@ Local-first persistent memory with optional Supermemory push.
 | Config via plugin config: interval, max facts, supermemory URL/key | ✅ |
 | Relevant fact injection at session start | ✅ |
 
+### P6 — Remote Execution (`src/remote-execution/`)
+
+**Tools**: `run-on`, `list-targets`
+
+Multi-target execution interface with pluggable backends. Executes commands on local shell, Docker containers, or SSH hosts.
+
+| Feature | Status |
+|---------|--------|
+| Local execution via child_process | ✅ |
+| SSH target support | ✅ |
+| `list-targets` from config | ✅ |
+| Structured output capture (stdout, stderr, exit code) | ✅ |
+| Async execution with timeout | ✅ |
+
+### P8 — Skill Lifecycle (`src/skill-lifecycle/`)
+
+**Tools**: `skill-stats`, `skill-versions`, `skill-verify`, `skill-deprecate`, `skill-prune`
+
+Full lifecycle management for saved skills beyond creation. Supports version inspection, validation, deprecation, and cleanup.
+
+| Feature | Status |
+|---------|--------|
+| Skill statistics (usage, ratings, creation date) | ✅ |
+| Version history with diff | ✅ |
+| SKILL.md frontmatter validation | ✅ |
+| Soft deprecation with reason | ✅ |
+| Bulk prune of deprecated/empty skills | ✅ |
+
+### P9 — User Profiling (`src/user-profiling/`)
+
+**Tools**: `profile-summary`, `profile-preference`, `profile-insights`
+
+Builds longitudinal user models from session interactions. Tracks communication style, common task patterns, and decision history.
+
+| Feature | Status |
+|---------|--------|
+| Profile summary with preferences, stats, skills, patterns | ✅ |
+| Preference storage (key-value with tags, source tracking) | ✅ |
+| Pattern extraction from session history | ✅ |
+| JSON persistence in user data directory | ✅ |
+
 ---
 
 ## 2. Gateway Status
@@ -135,17 +178,20 @@ Both Telegram bots share the same session database on disk (both ultimately go t
 
 ## 3. Test Coverage
 
-**Total tests**: 48 — **All passing**
+**Total tests**: 78 — **All passing**
 
 | Section | Tests | What It Covers |
 |---------|-------|-----------------|
-| 1. Module Parsing | 10 | Both plugins import as ESM, hooks have correct shape, tools register, complexity state tracks, update-skill/feedback tools exist |
+| 1. Module Parsing | 10 | All plugins import as ESM, hooks have correct shape, tools register, complexity state tracks, update-skill/feedback tools exist |
 | 2. FTS5 Search | 2 | Index build, search results, empty results |
 | 3. Skill File System | 10 | SKILL.md creation, list, dedup, update, overwrite, feedback ratings, averages, error cases |
 | 4. System Transform | 3 | Guidance injection, relevant skills, empty skills |
 | 5. OpenCode Binary | 3 | Binary available, debug config, server response |
 | 6. Persona | 9 | Module import, hooks, 6 tools, defaults, file write, field edit, reset, system/messages transform |
 | 7. Memory Consolidation | 11 | Module, hooks, 8 tools, add/search/forget cycle, duplicate update, batch observations, list, stats, consolidate, mark, system transform |
+| 8. Remote Execution | 6 | Module, hooks, 2 tools, local execution, SSH target, error handling |
+| 9. Skill Lifecycle | 12 | Module, hooks, 5 tools, stats, versions, verify, deprecate, prune, edge cases |
+| 10. User Profiling | 12 | Module, hooks, 3 tools, profile creation, preferences, insights, persistence, edge cases |
 
 Test infrastructure: Podman/Docker container with multi-stage build, OpenCode binary downloaded from GitHub releases, isolated test DB.
 

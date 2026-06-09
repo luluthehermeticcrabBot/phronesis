@@ -6,6 +6,7 @@
 set -e
 
 export HOME=/data
+export NODE_PATH=/usr/local/lib/node_modules
 
 mkdir -p /data/.local/share/opencode
 mkdir -p /data/.opencode/skills

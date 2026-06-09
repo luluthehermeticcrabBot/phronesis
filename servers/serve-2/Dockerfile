@@ -31,7 +31,7 @@ COPY src/skill-lifecycle/ ./src/skill-lifecycle/
 COPY src/user-profiling/ ./src/user-profiling/
 
 RUN cd src/skill-creator && npm install 2>&1 | tail -3 && cd ../..
-RUN cd src/session-search && npm install 2>&1 | tail -3 && cd ../..
+RUN cd src/session-search && npm install 2>&1 | tail -3 && npm rebuild better-sqlite3 2>&1 | tail -3 && cd ../..
 RUN cd src/persona && npm install 2>&1 | tail -3 && cd ../..
 RUN cd src/memory-consolidation && npm install 2>&1 | tail -3 && npm rebuild better-sqlite3 2>&1 | tail -3 && cd ../..
 RUN cd src/remote-execution && npm install 2>&1 | tail -3 && cd ../..
@@ -43,7 +43,8 @@ FROM docker.io/node:22-bookworm-slim
 
 RUN apt-get update && apt-get install -y \
     curl jq sqlite3 ca-certificates git gh \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && npm install -g better-sqlite3
 
 COPY --from=build /usr/local/bin/opencode /usr/local/bin/opencode
 COPY --from=build /phronesis /phronesis

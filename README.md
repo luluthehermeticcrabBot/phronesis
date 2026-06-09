@@ -28,18 +28,26 @@ docs/
 ├── 07-telegram-multi-instance.md  Multi-instance deployment
 ├── 08-gateway-strategy.md       Gateway architecture & plan
 ├── 09-progress-report.md        Current progress & lessons learned
-└── 10-contributing.md           Development guide
+├── 10-contributing.md           Development guide
+├── 11-notification-system.md    Telegram notification wiring
+└── 12-p6-p8-p9-architecture.md  Remote exec, lifecycle, profiling
 
 src/
 ├── skill-creator/               P1 — Auto-skill creation plugin
 ├── session-search/              P2 — FTS5 session search plugin
 ├── persona/                     P4 — Structured persona plugin
-└── memory-consolidation/        P5 — Local-first memory plugin
+├── memory-consolidation/        P5 — Local-first memory plugin
+├── remote-execution/            P6 — Multi-target remote exec plugin
+├── skill-lifecycle/             P8 — Skill versioning & deprecation
+└── user-profiling/              P9 — Longitudinal user model plugin
+
+servers/
+└── serve-2/                     Isolated container for bot2 (port 4097)
 
 tests/
 └── container/                   Podman/Docker test container
     ├── Dockerfile               Multi-stage build
-    ├── test.mjs                 48-test suite
+    ├── test.mjs                 78-test suite
     └── entrypoint.sh            Test runner
 ```
 
@@ -47,10 +55,13 @@ tests/
 
 | Plugin | Phase | Tests | Status |
 |--------|-------|-------|--------|
-| `skill-creator` | 🟢 P1 | ✅ 48/48 | Active |
-| `session-search` | 🟢 P2 | ✅ 48/48 | Active |
-| `persona` | 🟡 P4 | ✅ 48/48 | Active |
-| `memory-consolidation` | 🟡 P5 | ✅ 48/48 | Active |
+| `skill-creator` | 🟢 P1 | ✅ 78/78 | Active |
+| `session-search` | 🟢 P2 | ✅ 78/78 | Active |
+| `persona` | 🟡 P4 | ✅ 78/78 | Active |
+| `memory-consolidation` | 🟡 P5 | ✅ 78/78 | Active |
+| `remote-execution` | 🟡 P6 | ✅ 78/78 | Active |
+| `skill-lifecycle` | 🟡 P8 | ✅ 78/78 | Active |
+| `user-profiling` | 🟡 P9 | ✅ 78/78 | Active |
 
 ### Gateway
 

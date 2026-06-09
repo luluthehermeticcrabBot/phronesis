@@ -33,7 +33,7 @@ function opencodeDbPath() {
  * Reads session → message → part, concatenates text per message,
  * and inserts into an FTS5 virtual table stored in a sidecar DB.
  */
-function rebuildIndex() {
+async function rebuildIndex() {
   const src = opencodeDbPath();
   if (!existsSync(src)) {
     console.warn('[session-search] opencode.db not found at', src);
@@ -41,12 +41,35 @@ function rebuildIndex() {
   }
 
   let srcDb;
-  try {
-    srcDb = require('better-sqlite3')(src, { readonly: true, fileMustExist: true });
-    srcDb.pragma('journal_mode = WAL');
-  } catch {
-    console.warn('[session-search] cannot open opencode.db (maybe locked)');
-    return;
+  let retryCount = 0;
+  const maxRetries = 5;
+  const retryDelay = 1000;
+
+  while (retryCount < maxRetries) {
+      try {
+        // Use absolute path to better-sqlite3 module (container path)
+        const betterSqlite3Path = '/phronesis/src/session-search/node_modules/better-sqlite3';
+        console.log('[session-search] Working directory:', process.cwd());
+        console.log('[session-search] Trying to load better-sqlite3 from:', betterSqlite3Path);
+        // Use direct require to avoid conflict with custom require
+        const Database = require(betterSqlite3Path);
+        console.log('[session-search] better-sqlite3 loaded successfully:', typeof Database);
+        console.log('[session-search] Trying to open database at:', src);
+        srcDb = new Database(src, { readonly: true, fileMustExist: true, timeout: 5000 });
+        console.log('[session-search] Database instance created successfully');
+        console.log('[session-search] Trying to set journal_mode = WAL');
+        srcDb.pragma('journal_mode = WAL');
+        console.log('[session-search] Database opened successfully');
+        break; // Success, exit retry loop
+    } catch (err) {
+      retryCount++;
+      if (retryCount >= maxRetries) {
+        console.warn('[session-search] cannot open opencode.db after retries:', err.message);
+        return;
+      }
+      console.warn(`[session-search] cannot open opencode.db (attempt ${retryCount}/${maxRetries}), retrying in ${retryDelay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, retryDelay));
+    }
   }
 
   const searchPath = searchDbPath();
@@ -55,7 +78,11 @@ function rebuildIndex() {
 
   let dstDb;
   try {
-    dstDb = require('better-sqlite3')(searchPath);
+    // Use absolute path to better-sqlite3 module (container path)
+    const betterSqlite3Path = '/phronesis/src/session-search/node_modules/better-sqlite3';
+    // Use direct require to avoid conflict with custom require
+    const Database = require(betterSqlite3Path);
+    dstDb = new Database(searchPath);
   } catch {
     console.warn('[session-search] cannot create search index DB');
     srcDb.close();
@@ -127,7 +154,7 @@ function rebuildIndex() {
 /**
  * Query the FTS5 search index.
  */
-function searchIndex(query, limit = 10) {
+async function searchIndex(query, limit = 10) {
   const searchPath = searchDbPath();
   if (!existsSync(searchPath)) {
     rebuildIndex();
@@ -137,10 +164,27 @@ function searchIndex(query, limit = 10) {
   }
 
   let db;
-  try {
-    db = require('better-sqlite3')(searchPath, { readonly: true });
-  } catch {
-    return [];
+  let retryCount = 0;
+  const maxRetries = 3;
+  const retryDelay = 500;
+
+  while (retryCount < maxRetries) {
+    try {
+      // Use absolute path to better-sqlite3 module (container path)
+      const betterSqlite3Path = '/phronesis/src/session-search/node_modules/better-sqlite3';
+      // Use direct require to avoid conflict with custom require
+      const Database = require(betterSqlite3Path);
+      db = new Database(searchPath, { readonly: true, timeout: 3000 });
+      break; // Success, exit retry loop
+    } catch (err) {
+      retryCount++;
+      if (retryCount >= maxRetries) {
+        console.warn('[session-search] cannot open search index DB after retries:', err.message);
+        return [];
+      }
+      console.warn(`[session-search] cannot open search index DB (attempt ${retryCount}/${maxRetries}), retrying in ${retryDelay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, retryDelay));
+    }
   }
 
   // Sanitize FTS5 query: escape special chars, add prefix matching
@@ -199,7 +243,9 @@ export default function (ctx) {
 
   // Build index on plugin load (async, fire and forget)
   try {
-    rebuildIndex();
+    rebuildIndex().catch(err => {
+      console.warn('[session-search] initial index build failed:', err.message);
+    });
   } catch (err) {
     console.warn('[session-search] initial index build failed:', err.message);
   }
