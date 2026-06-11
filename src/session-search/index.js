@@ -1,15 +1,13 @@
 import { tool } from '@opencode-ai/plugin';
 import { z } from 'zod';
-import { createRequire } from 'module';
-import { join, dirname } from 'path';
+import { execSync } from 'child_process';
+import { join, dirname, basename } from 'path';
 import { homedir } from 'os';
-import { readFileSync, existsSync, mkdirSync } from 'fs';
+import { existsSync, mkdirSync } from 'fs';
 import { getTelegramConfig, sendTelegramNotification } from "../shared/telegram.js";
 
-const require = createRequire(import.meta.url);
-
 // ---------------------------------------------------------------------------
-// FTS5 index builder
+// FTS5 index builder — uses sqlite3 CLI (bypasses OpenCode's native module ban)
 // ---------------------------------------------------------------------------
 
 const SEARCH_DB_NAME = 'phronesis_search.db';
@@ -29,93 +27,69 @@ function opencodeDbPath() {
 }
 
 /**
- * Rebuild the FTS5 search index from the main opencode.db.
- * Reads session → message → part, concatenates text per message,
- * and inserts into an FTS5 virtual table stored in a sidecar DB.
+ * Run a sqlite3 command and return lines of output.
+ * Each line is a JSON row from -json mode.
  */
-async function rebuildIndex() {
+function sql(query, dbPath, opts = {}) {
+  const args = [];
+  if (opts.readonly) args.push('-readonly');
+  args.push('-json', dbPath, query);
+  try {
+    const out = execSync('sqlite3', args, { encoding: 'utf8', timeout: 10000 });
+    return JSON.parse(out.trim() || '[]');
+  } catch (err) {
+    console.warn(`[session-search] sqlite3 error: ${err.message}`);
+    return [];
+  }
+}
+
+/**
+ * Execute a sqlite3 command that returns no rows (CREATE, INSERT, DELETE).
+ */
+function sqlExec(query, dbPath) {
+  try {
+    execSync('sqlite3', [dbPath, query], { encoding: 'utf8', timeout: 10000 });
+    return true;
+  } catch (err) {
+    console.warn(`[session-search] sqlite3 exec error: ${err.message}`);
+    return false;
+  }
+}
+
+/**
+ * Rebuild the FTS5 search index from the main opencode.db.
+ * Uses sqlite3 CLI to avoid native module restrictions.
+ */
+function rebuildIndex() {
   const src = opencodeDbPath();
   if (!existsSync(src)) {
     console.warn('[session-search] opencode.db not found at', src);
     return;
   }
 
-  let srcDb;
-  let retryCount = 0;
-  const maxRetries = 5;
-  const retryDelay = 1000;
-
-  while (retryCount < maxRetries) {
-      try {
-        // Use absolute path to better-sqlite3 module (container path)
-        const betterSqlite3Path = '/phronesis/src/session-search/node_modules/better-sqlite3';
-        console.log('[session-search] Working directory:', process.cwd());
-        console.log('[session-search] Trying to load better-sqlite3 from:', betterSqlite3Path);
-        // Use direct require to avoid conflict with custom require
-        const Database = require(betterSqlite3Path);
-        console.log('[session-search] better-sqlite3 loaded successfully:', typeof Database);
-        console.log('[session-search] Trying to open database at:', src);
-        srcDb = new Database(src, { readonly: true, fileMustExist: true, timeout: 5000 });
-        console.log('[session-search] Database instance created successfully');
-        console.log('[session-search] Trying to set journal_mode = WAL');
-        srcDb.pragma('journal_mode = WAL');
-        console.log('[session-search] Database opened successfully');
-        break; // Success, exit retry loop
-    } catch (err) {
-      retryCount++;
-      if (retryCount >= maxRetries) {
-        console.warn('[session-search] cannot open opencode.db after retries:', err.message);
-        return;
-      }
-      console.warn(`[session-search] cannot open opencode.db (attempt ${retryCount}/${maxRetries}), retrying in ${retryDelay}ms...`);
-      await new Promise(resolve => setTimeout(resolve, retryDelay));
-    }
-  }
-
   const searchPath = searchDbPath();
   const dstDir = dirname(searchPath);
   if (!existsSync(dstDir)) mkdirSync(dstDir, { recursive: true });
 
-  let dstDb;
-  try {
-    // Use absolute path to better-sqlite3 module (container path)
-    const betterSqlite3Path = '/phronesis/src/session-search/node_modules/better-sqlite3';
-    // Use direct require to avoid conflict with custom require
-    const Database = require(betterSqlite3Path);
-    dstDb = new Database(searchPath);
-  } catch {
-    console.warn('[session-search] cannot create search index DB');
-    srcDb.close();
+  // Create FTS5 virtual table
+  const createSql = `CREATE VIRTUAL TABLE IF NOT EXISTS session_search USING fts5(
+    session_id UNINDEXED,
+    session_title,
+    role UNINDEXED,
+    text,
+    tokenize='porter unicode61'
+  );`;
+
+  if (!sqlExec(createSql, searchPath)) {
+    console.warn('[session-search] cannot create search index');
     return;
   }
 
-  // Create FTS5 virtual table if it doesn't exist
-  dstDb.exec(`
-    CREATE VIRTUAL TABLE IF NOT EXISTS session_search USING fts5(
-      session_id UNINDEXED,
-      session_title,
-      role UNINDEXED,
-      text,
-      tokenize='porter unicode61'
-    );
-  `);
+  // Clear existing data
+  sqlExec('DELETE FROM session_search', searchPath);
 
-  // Clear and repopulate
-  dstDb.exec('DELETE FROM session_search');
-
-  const insert = dstDb.prepare(
-    `INSERT INTO session_search(session_id, session_title, role, text) VALUES (?, ?, ?, ?)`
-  );
-
-  const insertMany = dstDb.transaction((rows) => {
-    for (const r of rows) {
-      insert.run(r.session_id, r.session_title, r.role, r.text);
-    }
-  });
-
-  // Query: for each message with text parts, create a search row
-  // We join session → message → part, grouping parts per message
-  const rows = srcDb.prepare(`
+  // Index session messages (grouped by message, text concatenated)
+  const msgQuery = `
     SELECT
       s.id AS session_id,
       s.title AS session_title,
@@ -129,61 +103,52 @@ async function rebuildIndex() {
     GROUP BY m.id
     HAVING length(text) > 20
     ORDER BY m.time_created
-  `).all();
+  `;
 
-  if (rows.length > 0) {
-    insertMany(rows);
+  const msgRows = sql(msgQuery, src, { readonly: true });
+  if (msgRows.length > 0) {
+    for (const r of msgRows) {
+      const insertSql = `INSERT INTO session_search(session_id, session_title, role, text) VALUES(
+        ${JSON.stringify(r.session_id)},
+        ${JSON.stringify(r.session_title || '')},
+        ${JSON.stringify(r.role || '')},
+        ${JSON.stringify(r.text || '')}
+      )`;
+      sqlExec(insertSql, searchPath);
+    }
   }
 
-  // Also index session titles for quick lookup
-  const titleRows = srcDb.prepare(`
+  // Index session titles
+  const titleQuery = `
     SELECT id AS session_id, title AS session_title, NULL AS role, title AS text
     FROM session
     WHERE title NOT LIKE 'New session%'
-  `).all();
-
+  `;
+  const titleRows = sql(titleQuery, src, { readonly: true });
   if (titleRows.length > 0) {
-    insertMany(titleRows);
+    for (const r of titleRows) {
+      const insertSql = `INSERT INTO session_search(session_id, session_title, role, text) VALUES(
+        ${JSON.stringify(r.session_id)},
+        ${JSON.stringify(r.session_title || '')},
+        ${JSON.stringify(r.role || '')},
+        ${JSON.stringify(r.text || '')}
+      )`;
+      sqlExec(insertSql, searchPath);
+    }
   }
 
-  console.log(`[session-search] indexed ${rows.length} messages + ${titleRows.length} titles`);
-  dstDb.close();
-  srcDb.close();
+  console.log(`[session-search] indexed ${msgRows.length} messages + ${titleRows.length} titles`);
 }
 
 /**
  * Query the FTS5 search index.
  */
-async function searchIndex(query, limit = 10) {
+function searchIndex(query, limit = 10) {
   const searchPath = searchDbPath();
   if (!existsSync(searchPath)) {
     rebuildIndex();
     if (!existsSync(searchPath)) {
       return [];
-    }
-  }
-
-  let db;
-  let retryCount = 0;
-  const maxRetries = 3;
-  const retryDelay = 500;
-
-  while (retryCount < maxRetries) {
-    try {
-      // Use absolute path to better-sqlite3 module (container path)
-      const betterSqlite3Path = '/phronesis/src/session-search/node_modules/better-sqlite3';
-      // Use direct require to avoid conflict with custom require
-      const Database = require(betterSqlite3Path);
-      db = new Database(searchPath, { readonly: true, timeout: 3000 });
-      break; // Success, exit retry loop
-    } catch (err) {
-      retryCount++;
-      if (retryCount >= maxRetries) {
-        console.warn('[session-search] cannot open search index DB after retries:', err.message);
-        return [];
-      }
-      console.warn(`[session-search] cannot open search index DB (attempt ${retryCount}/${maxRetries}), retrying in ${retryDelay}ms...`);
-      await new Promise(resolve => setTimeout(resolve, retryDelay));
     }
   }
 
@@ -193,45 +158,36 @@ async function searchIndex(query, limit = 10) {
     .replace(/[^\w\s-]/g, ' ')
     .trim();
 
-  if (!sanitized) {
-    db.close();
-    return [];
-  }
+  if (!sanitized) return [];
 
-  // Build FTS5 query: use term prefix matching
   const terms = sanitized.split(/\s+/).filter(Boolean);
   const ftsQuery = terms.map(t => `"${t}"*`).join(' AND ');
 
-  try {
-    const rows = db.prepare(`
-      SELECT
-        session_id,
-        session_title,
-        rank,
-        snippet(session_search, 2, '<<', '>>', '...', 40) AS snippet_text
-      FROM session_search
-      WHERE session_search MATCH ?
-      ORDER BY rank
-      LIMIT ?
-    `).all(ftsQuery, limit);
+  const searchSql = `
+    SELECT
+      session_id,
+      session_title,
+      rank,
+      snippet(session_search, 2, '<<', '>>', '...', 40) AS snippet_text
+    FROM session_search
+    WHERE session_search MATCH ${JSON.stringify(ftsQuery)}
+    ORDER BY rank
+    LIMIT ${Math.min(limit, 100)}
+  `;
 
-    // Deduplicate by session_id, keep best snippet
-    const seen = new Set();
-    const deduped = [];
-    for (const r of rows) {
-      if (!seen.has(r.session_id)) {
-        seen.add(r.session_id);
-        deduped.push(r);
-      }
+  const rows = sql(searchSql, searchPath, { readonly: true });
+
+  // Deduplicate by session_id, keep best snippet
+  const seen = new Set();
+  const deduped = [];
+  for (const r of rows) {
+    if (!seen.has(r.session_id)) {
+      seen.add(r.session_id);
+      deduped.push(r);
     }
-
-    db.close();
-    return deduped;
-  } catch (err) {
-    console.warn('[session-search] query failed:', err.message);
-    db.close();
-    return [];
   }
+
+  return deduped;
 }
 
 // ---------------------------------------------------------------------------
@@ -240,15 +196,6 @@ async function searchIndex(query, limit = 10) {
 
 export default function (ctx) {
   const tgConfig = getTelegramConfig(ctx?.config);
-
-  // Build index on plugin load (async, fire and forget)
-  try {
-    rebuildIndex().catch(err => {
-      console.warn('[session-search] initial index build failed:', err.message);
-    });
-  } catch (err) {
-    console.warn('[session-search] initial index build failed:', err.message);
-  }
 
   return {
     tool: [
