@@ -1,0 +1,35 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [22]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Install build tools (better-sqlite3 native compilation)
+        run: sudo apt-get update && sudo apt-get install -y python3 make g++ sqlite3
+
+      - name: Install plugin dependencies
+        run: npm run setup
+
+      - name: Run test suite
+        run: npm test
+
+      - name: Show test output on failure
+        if: failure()
+        run: cat /tmp/phronesis-*.log 2>/dev/null || echo "(no test logs found)"

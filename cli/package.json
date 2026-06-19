@@ -1,0 +1,21 @@
+{
+  "name": "phronesis",
+  "version": "0.1.0",
+  "description": "Hermes-inspired CLI wrapper for OpenCode + Phronesis plugins",
+  "type": "module",
+  "bin": {
+    "phronesis": "./bin/phronesis.js"
+  },
+  "files": [
+    "bin/",
+    "src/"
+  ],
+  "dependencies": {
+    "js-yaml": "^4.1.0",
+    "yargs": "^17.7.2"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}

@@ -1,5 +1,5 @@
 import { tool } from '@opencode-ai/plugin';
-import { execSync } from 'child_process';
+import { spawnSync } from 'child_process';
 import { join, dirname } from 'path';
 import { homedir } from 'os';
 import { existsSync, mkdirSync } from 'fs';
@@ -8,6 +8,16 @@ import { getTelegramConfig, sendTelegramNotification } from "../shared/telegram.
 // ---------------------------------------------------------------------------
 // FTS5 index builder — uses sqlite3 CLI (bypasses OpenCode's native module ban)
 // ---------------------------------------------------------------------------
+
+/**
+ * Escape a value for safe use in SQL string literals.
+ * SQLite: single quotes inside strings are doubled ('').
+ * NULL -> NULL, everything else -> 'escaped'.
+ */
+function sqlEscape(val) {
+  if (val === null || val === undefined) return 'NULL';
+  return "'" + String(val).replace(/'/g, "''") + "'";
+}
 
 const SEARCH_DB_NAME = 'phronesis_search.db';
 
@@ -26,18 +36,27 @@ function opencodeDbPath() {
 }
 
 /**
- * Run a sqlite3 command and return lines of output.
- * Each line is a JSON row from -json mode.
+ * Run a sqlite3 command and return parsed JSON rows.
+ * Uses spawnSync (NOT execSync) — sqlite3 arguments must be
+ * passed as an array, not as part of the command string.
  */
 function sql(query, dbPath, opts = {}) {
   const args = [];
   if (opts.readonly) args.push('-readonly');
   args.push('-json', dbPath, query);
   try {
-    const out = execSync('sqlite3', args, { encoding: 'utf8', timeout: 10000 });
-    return JSON.parse(out.trim() || '[]');
+    const result = spawnSync('sqlite3', args, { encoding: 'utf8', timeout: 10000 });
+    if (result.error) {
+      console.warn(`[session-search] sqlite3 error: ${result.error.message}`);
+      return [];
+    }
+    if (result.status !== 0) {
+      console.warn(`[session-search] sqlite3 exited with status ${result.status}: ${result.stderr?.trim()}`);
+      return [];
+    }
+    return JSON.parse(result.stdout.trim() || '[]');
   } catch (err) {
-    console.warn(`[session-search] sqlite3 error: ${err.message}`);
+    console.warn(`[session-search] sqlite3 parse error: ${err.message}`);
     return [];
   }
 }
@@ -47,7 +66,15 @@ function sql(query, dbPath, opts = {}) {
  */
 function sqlExec(query, dbPath) {
   try {
-    execSync('sqlite3', [dbPath, query], { encoding: 'utf8', timeout: 10000 });
+    const result = spawnSync('sqlite3', [dbPath, query], { encoding: 'utf8', timeout: 10000 });
+    if (result.error) {
+      console.warn(`[session-search] sqlite3 exec error: ${result.error.message}`);
+      return false;
+    }
+    if (result.status !== 0) {
+      console.warn(`[session-search] sqlite3 exec exited with status ${result.status}: ${result.stderr?.trim()}`);
+      return false;
+    }
     return true;
   } catch (err) {
     console.warn(`[session-search] sqlite3 exec error: ${err.message}`);
@@ -108,10 +135,10 @@ function rebuildIndex() {
   if (msgRows.length > 0) {
     for (const r of msgRows) {
       const insertSql = `INSERT INTO session_search(session_id, session_title, role, text) VALUES(
-        ${JSON.stringify(r.session_id)},
-        ${JSON.stringify(r.session_title || '')},
-        ${JSON.stringify(r.role || '')},
-        ${JSON.stringify(r.text || '')}
+        ${sqlEscape(r.session_id)},
+        ${sqlEscape(r.session_title)},
+        ${sqlEscape(r.role)},
+        ${sqlEscape(r.text)}
       )`;
       sqlExec(insertSql, searchPath);
     }
@@ -127,10 +154,10 @@ function rebuildIndex() {
   if (titleRows.length > 0) {
     for (const r of titleRows) {
       const insertSql = `INSERT INTO session_search(session_id, session_title, role, text) VALUES(
-        ${JSON.stringify(r.session_id)},
-        ${JSON.stringify(r.session_title || '')},
-        ${JSON.stringify(r.role || '')},
-        ${JSON.stringify(r.text || '')}
+        ${sqlEscape(r.session_id)},
+        ${sqlEscape(r.session_title)},
+        ${sqlEscape(r.role)},
+        ${sqlEscape(r.text)}
       )`;
       sqlExec(insertSql, searchPath);
     }
@@ -167,9 +194,9 @@ function searchIndex(query, limit = 10) {
       session_id,
       session_title,
       rank,
-      snippet(session_search, 2, '<<', '>>', '...', 40) AS snippet_text
+      snippet(session_search, 3, '<<', '>>', '...', 40) AS snippet_text
     FROM session_search
-    WHERE session_search MATCH ${JSON.stringify(ftsQuery)}
+    WHERE session_search MATCH ${sqlEscape(ftsQuery)}
     ORDER BY rank
     LIMIT ${Math.min(limit, 100)}
   `;
@@ -194,6 +221,7 @@ function searchIndex(query, limit = 10) {
 // ---------------------------------------------------------------------------
 
 export default {
+  id: 'session-search',
   server: async () => {
     const tgConfig = getTelegramConfig();
 

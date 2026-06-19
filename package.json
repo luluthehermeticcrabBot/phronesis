@@ -1,0 +1,15 @@
+{
+  "name": "phronesis",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Practical wisdom from agent experience — OpenCode adaptive skills & memory plugins",
+  "scripts": {
+    "setup": "npm install --prefix src/skill-creator && npm install --prefix src/session-search && npm install --prefix src/persona && npm install --prefix src/memory-consolidation && npm install --prefix src/remote-execution && npm install --prefix src/skill-lifecycle && npm install --prefix src/user-profiling",
+    "test": "node tests/container/test.mjs",
+    "test:integration": "node tests/phronesis-integration-test.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

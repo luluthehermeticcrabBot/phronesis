@@ -1,6 +1,12 @@
 #!/bin/bash
 set -e
 
+# ── If arguments are provided, exec them directly (serve mode) ──
+if [ $# -gt 0 ]; then
+  exec "$@"
+fi
+
+# ── Otherwise, run the test suite ──
 echo ""
 echo "╔══════════════════════════════════════════╗"
 echo "║   Phronesis Plugin Test Suite            ║"

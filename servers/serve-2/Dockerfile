@@ -57,4 +57,7 @@ VOLUME ["/data"]
 
 EXPOSE 4097
 
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+  CMD curl --fail http://localhost:4097/ || exit 1
+
 ENTRYPOINT ["/entrypoint.sh"]

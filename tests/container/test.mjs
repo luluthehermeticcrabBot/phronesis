@@ -155,8 +155,10 @@ async function testModuleParsing() {
 
   // 1.7 Identify generator produces valid SKILL.md
   await testAsync('generateSkillContent produces valid SKILL.md', async () => {
+    const tmpDir = join(tmpdir(), 'phronesis-test-gen-' + Date.now());
+    mkdirSync(tmpDir, { recursive: true });
     const mod = await import(join(__dirname, '..', '..', 'src', 'skill-creator', 'index.js'));
-    const hooks = await mod.default({});
+    const hooks = await mod.default({ worktree: tmpDir });
 
     const saveTool = hooks.tool['save-skill'];
     const result = await saveTool.execute({
@@ -172,6 +174,8 @@ async function testModuleParsing() {
     assert(parsed.success === true, 'save-skill must return success');
     assert(parsed.path.includes('test-skill'), 'path must reference skill name');
     assert(parsed.message.includes('test-skill'), 'message must reference skill name');
+
+    rmSync(tmpDir, { recursive: true, force: true });
   });
 
   // 1.8 Test scanSkills handles missing directory
@@ -195,13 +199,14 @@ async function testModuleParsing() {
   // 1.9 Import session-search plugin
   await testAsync('session-search module imports as ESM', async () => {
     const mod = await import(join(__dirname, '..', '..', 'src', 'session-search', 'index.js'));
-    assert(typeof mod.default === 'function', 'default export must be a function');
+    assert(mod.default !== null && typeof mod.default === 'object', 'default export must be an object');
+    assert(typeof mod.default.server === 'function', 'must have server() factory');
   });
 
   // 1.10 Session-search plugin structure
   await testAsync('session-search returns hooks with search-sessions tool', async () => {
     const mod = await import(join(__dirname, '..', '..', 'src', 'session-search', 'index.js'));
-    const hooks = mod.default();
+    const hooks = await mod.default.server();
 
     assert(hooks !== null && typeof hooks === 'object', 'hooks must be an object');
 
@@ -288,7 +293,7 @@ async function testFTS5Search() {
 
   await testAsync('session-search handles empty results gracefully', async () => {
     const mod = await import(join(__dirname, '..', '..', 'src', 'session-search', 'index.js'));
-    const hooks = mod.default();
+    const hooks = await mod.default.server();
     const tools = Array.isArray(hooks.tool) ? hooks.tool : Object.values(hooks.tool);
     const searchTool = tools.find(t => t.name === 'search-sessions' || t.description?.includes('search'));
 

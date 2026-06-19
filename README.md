@@ -18,6 +18,15 @@ Phronesis fills these gaps, one plugin at a time.
 ## Project Structure
 
 ```
+cli/                             Phronesis CLI & wrapper
+├── bin/phronesis.js             Entry point
+├── src/
+│   ├── cli.js                   Command router (14 commands)
+│   ├── commands/                Modular commands (version, config, profile, etc.)
+│   └── lib/                     Shared libs (opencode wrapper, config, search, paths)
+├── package.json                 npm package (@phronesis/cli)
+└── README.md
+
 docs/
 ├── 01-analysis.md               Hermes vs OpenCode gap analysis
 ├── 02-roadmap.md                Strategic phases and priorities
@@ -30,7 +39,8 @@ docs/
 ├── 09-progress-report.md        Current progress & lessons learned
 ├── 10-contributing.md           Development guide
 ├── 11-notification-system.md    Telegram notification wiring
-└── 12-p6-p8-p9-architecture.md  Remote exec, lifecycle, profiling
+├── 12-p6-p8-p9-architecture.md  Remote exec, lifecycle, profiling
+└── 13-cli-and-profiles.md       CLI specification & multi-profile model
 
 src/
 ├── skill-creator/               P1 — Auto-skill creation plugin
@@ -43,12 +53,13 @@ src/
 
 servers/
 └── serve-2/                     Isolated container for bot2 (port 4097)
+    └── Dockerfile               Multi-stage + HEALTHCHECK
 
 tests/
 └── container/                   Podman/Docker test container
     ├── Dockerfile               Multi-stage build
-    ├── test.mjs                 78-test suite
-    └── entrypoint.sh            Test runner
+    ├── test.mjs                 78-test suite (70/78 pass in Alpine, 8 need musl-native better-sqlite3)
+    └── entrypoint.sh            Test runner with serve mode support
 ```
 
 ## Status
@@ -58,7 +69,7 @@ tests/
 | `skill-creator` | 🟢 P1 | ✅ 78/78 | Active |
 | `session-search` | 🟢 P2 | ✅ 78/78 | Active |
 | `persona` | 🟡 P4 | ✅ 78/78 | Active |
-| `memory-consolidation` | 🟡 P5 | ✅ 78/78 | Active |
+| `memory-consolidation` | 🟡 P5 | ⚠️ 70/78 | Active (8 fail on musl — better-sqlite3 needs native rebuild) |
 | `remote-execution` | 🟡 P6 | ✅ 78/78 | Active |
 | `skill-lifecycle` | 🟡 P8 | ✅ 78/78 | Active |
 | `user-profiling` | 🟡 P9 | ✅ 78/78 | Active |
@@ -67,10 +78,10 @@ tests/
 
 | Platform | Component | Status | Details |
 |----------|-----------|--------|---------|
-| Telegram | Bot 1 | ✅ Production | `opencode-telegram.service`, port 4096 |
-| Telegram | Bot 2 | ✅ Production | `opencode-telegram-2.service`, port 4097 |
+| Telegram | Bot 1 | ✅ Production | `opencode-telegram.service`, port 4096 (legacy) |
+| Telegram | Bot 2 | ✅ Production | Phronesis container (`phronesis-test`), port 4098, HEALTHCHECK enabled |
 | Email | AgentMail MCP | ✅ Configured | Remote MCP at `mcp.agentmail.to` (needs API key) |
-| CLI | Native | ✅ Always available | Direct terminal |
+| CLI | Native | ✅ Always available | Direct terminal + `phronesis` wrapper |
 
 ## Core Philosophy
 
