@@ -64,8 +64,10 @@ phronesis sessions
   rebuild [--overwrite]              → Rebuild FTS5 search index from opencode.db
 
 phronesis send
-  telegram <message> [--profile <name>]   → Send one-off Telegram message via profile's gateway
-  (future: discord, slack, email)
+  telegram <message> [--profile <name>] [--bot <id>]   → Telegram via Bot API
+  webhook <message> [--profile <name>] [--url <url>]    → Generic webhook POST
+  slack <message> [--profile <name>] [--url <url>]      → Slack webhook
+  discord <message> [--profile <name>] [--url <url>]    → Discord webhook
 
 phronesis setup                      → Interactive first-run wizard
 phronesis doctor                     → Diagnostics / system check
@@ -429,8 +431,10 @@ export function opencodeRun(tool, args, opts = {}) {
 
 **Phase 3 — Send + Dashboard:**
 - [x] `phronesis send telegram <msg>` — one-off Telegram message
+- [x] `phronesis send webhook <msg>` — generic webhook
+- [x] `phronesis send slack <msg>` — Slack webhook
+- [x] `phronesis send discord <msg>` — Discord webhook
 - [ ] `phronesis dashboard` (web dashboard launch — future)
-- [ ] Multi-platform send (discord, slack, webhook — future)
 
 ---
 

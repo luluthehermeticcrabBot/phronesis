@@ -80,6 +80,10 @@ tests/
 |----------|-----------|--------|---------|
 | Telegram | Bot 1 | ✅ Production | `opencode-telegram.service`, port 4096 (legacy) |
 | Telegram | Bot 2 | ✅ Production | Phronesis container (`phronesis-test`), port 4098, HEALTHCHECK enabled |
+| Telegram | Send CLI | ✅ `phronesis send telegram` | One-off messages via Bot API |
+| Webhook | Send CLI | ✅ `phronesis send webhook` | Generic JSON POST to any URL |
+| Slack | Send CLI | ✅ `phronesis send slack` | Slack-compatible webhook payload |
+| Discord | Send CLI | ✅ `phronesis send discord` | Discord webhook with "Phronesis" username |
 | Email | AgentMail MCP | ✅ Configured | Remote MCP at `mcp.agentmail.to` (needs API key) |
 | CLI | Native | ✅ Always available | Direct terminal + `phronesis` wrapper |
 
