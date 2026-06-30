@@ -20,6 +20,9 @@ import { opencode, opencodeRun, systemctl, journalctl, resolveProfile, resolveOp
 import { getProfileConfig } from "./lib/config.js";
 import { searchSessions, listSessions, rebuildSearchIndex } from "./lib/search.js";
 import { profileDir } from "./lib/paths.js";
+import * as upgradeCmd from "./commands/upgrade.js";
+import { spinner } from "./lib/spinner.js";
+import { enhanceError } from "./lib/error-helpers.js";
 
 /**
  * Build yargs-compatible options from argv for the opencode wrapper.
@@ -230,12 +233,15 @@ function buildCli() {
               writeFileSync(unitPath, unitContent, "utf8");
 
               try {
-                spawnSync("systemctl", ["--user", "daemon-reload"], { encoding: "utf8", timeout: 15000 });
+                const dr = spawnSync("systemctl", ["--user", "daemon-reload"], { encoding: "utf8", timeout: 15000 });
+                if (dr.error) throw enhanceError(dr.error, { command: "systemctl daemon-reload" });
                 systemctl("enable", profileUnit, { profile, interactive: true });
                 systemctl("start", profileUnit, { profile, interactive: true });
                 console.log(`[phronesis] Gateway "${profile}" bot ${bot.id} installed and started.`);
               } catch (err) {
                 console.log(`[phronesis] Unit written to ${unitPath}`);
+                const msg = err.originalError ? err.message : "";
+                if (msg) console.error(`[phronesis] ${msg}`);
                 console.log(`[phronesis] Run on the host (outside container) to activate:\n` +
                   `  systemctl --user daemon-reload\n` +
                   `  systemctl --user enable --now ${profileUnit}`);
@@ -251,7 +257,8 @@ function buildCli() {
               if (existsSync(unitPath)) {
                 unlinkSync(unitPath);
                 try {
-                  spawnSync("systemctl", ["--user", "daemon-reload"], { encoding: "utf8", timeout: 15000 });
+                  const dr = spawnSync("systemctl", ["--user", "daemon-reload"], { encoding: "utf8", timeout: 15000 });
+                  if (dr.error) throw enhanceError(dr.error, { command: "systemctl daemon-reload" });
                 } catch {}
               }
               console.log(`[phronesis] Gateway "${profile}" bot ${bot.id} uninstalled.`);
@@ -408,15 +415,17 @@ function buildCli() {
             break;
           case "rebuild": {
             const profileCfg = getProfileConfig(profile);
+            const spin = spinner("Rebuilding search index...");
             try {
               const result = rebuildSearchIndex({
                 profile,
                 dbPath: profileCfg?.search?.db_path,
                 overwrite: argv.overwrite,
               });
+              spin.succeed("Search index rebuilt");
               console.log(result);
             } catch (err) {
-              console.error(`Rebuild error: ${err.message}`);
+              spin.fail(`Rebuild failed: ${err.message}`);
             }
             break;
           }
@@ -429,6 +438,7 @@ function buildCli() {
 
     // Migration (Phase 2)
     .command(migrateCmd)
+    .command(upgradeCmd)
 
     // Error handling
     .fail((msg, err) => {

@@ -63,11 +63,13 @@ function displayPluginList(plugins, opts = {}) {
   }
 
   const nameWidth = Math.max(...plugins.map((p) => p.name.length)) + 2;
+  const catWidth = Math.max(...plugins.map((p) => (p.category || "").length)) + 2;
 
   for (const p of plugins) {
-    const verified = p.verified ? "\u2713 verified" : "";
+    const verified = p.verified ? "\u2713" : " ";
+    const category = p.category || "other";
     console.log(
-      `  ${padEnd(p.name, nameWidth)} ${p.description} ${verified ? "  " + verified : ""}`
+      `  ${padEnd(p.name, nameWidth)} ${padEnd(category, catWidth)} ${p.description}  [${verified}]`
     );
   }
 }
@@ -88,6 +90,11 @@ export function builder(yargs) {
     .option("verified", {
       describe: "Filter to verified plugins only (for 'list')",
       type: "boolean",
+    })
+    .option("category", {
+      describe: "Filter by category (for 'list' and 'search')",
+      type: "string",
+      choices: ["knowledge-management", "search", "configuration", "memory", "analytics", "automation", "development", "data-ingestion", "communication"],
     })
     .option("json", {
       describe: "Output as JSON",
@@ -116,10 +123,13 @@ export async function handler(argv) {
       if (argv.verified) {
         plugins = plugins.filter((p) => p.verified);
       }
+      if (argv.category) {
+        plugins = plugins.filter((p) => p.category === argv.category);
+      }
       if (argv.json) {
         console.log(JSON.stringify(plugins, null, 2));
       } else {
-        console.log("Available plugins:");
+        console.log(`Available plugins (${plugins.length}):`);
         displayPluginList(plugins);
       }
       break;
@@ -132,12 +142,16 @@ export async function handler(argv) {
         process.exit(1);
       }
       const q = argv.query.toLowerCase();
-      const matches = registry.filter(
+      let matches = registry.filter(
         (p) =>
           p.name.toLowerCase().includes(q) ||
           p.description.toLowerCase().includes(q) ||
+          p.category.toLowerCase().includes(q) ||
           (p.tools || []).some((t) => t.toLowerCase().includes(q))
       );
+      if (argv.category) {
+        matches = matches.filter((p) => p.category === argv.category);
+      }
 
       if (argv.json) {
         console.log(JSON.stringify(matches, null, 2));
@@ -145,7 +159,7 @@ export async function handler(argv) {
         if (matches.length === 0) {
           console.log(`No results for "${argv.query}".`);
         } else {
-          console.log(`Results for "${argv.query}":`);
+          console.log(`Results for "${argv.query}" (${matches.length}):`);
           displayPluginList(matches);
         }
       }
@@ -170,8 +184,11 @@ export async function handler(argv) {
       } else {
         console.log(`Plugin: ${plugin.name}`);
         console.log(`  Description: ${plugin.description}`);
+        console.log(`  Category:   ${plugin.category || "other"}`);
         console.log(`  Path:       ${plugin.path}`);
         console.log(`  Tools:      ${(plugin.tools || []).join(", ")}`);
+        console.log(`  Version:    ${plugin.version || "—"}`);
+        console.log(`  Author:     ${plugin.author || "—"}`);
         console.log(`  Verified:   ${plugin.verified ? "\u2713" : "x"}`);
         console.log(`  Repo:       ${plugin.repo}`);
       }
