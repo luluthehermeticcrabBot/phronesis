@@ -33,6 +33,9 @@
     "node": ">=18"
   },
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "prepublishOnly": "node -e \"require('fs').existsSync('tests') && console.log('Run: npm test before publishing')\"",
     "test": "node tests/test.mjs",

@@ -1,0 +1,72 @@
+[
+  {
+    "name": "skill-creator",
+    "description": "Auto-creates SKILL.md files from session workflows",
+    "repo": "https://github.com/luluthehungrycat/phronesis",
+    "path": "src/skill-creator",
+    "tools": ["save-skill", "list-skills", "update-skill", "skill-feedback"],
+    "version": "0.1.0",
+    "author": "Phronesis",
+    "verified": true
+  },
+  {
+    "name": "session-search",
+    "description": "Full-text search across past sessions using FTS5",
+    "repo": "https://github.com/luluthehungrycat/phronesis",
+    "path": "src/session-search",
+    "tools": ["search-sessions"],
+    "version": "0.1.0",
+    "author": "Phronesis",
+    "verified": true
+  },
+  {
+    "name": "persona",
+    "description": "Persona management (get/set/edit/reset/import/export)",
+    "repo": "https://github.com/luluthehungrycat/phronesis",
+    "path": "src/persona",
+    "tools": ["get-persona", "set-persona", "edit-persona", "import-soul", "export-soul", "reset-persona"],
+    "version": "0.1.0",
+    "author": "Phronesis",
+    "verified": true
+  },
+  {
+    "name": "memory-consolidation",
+    "description": "Periodic memory consolidation across sessions",
+    "repo": "https://github.com/luluthehungrycat/phronesis",
+    "path": "src/memory-consolidation",
+    "tools": ["add-fact", "search-facts", "list-facts", "forget-fact", "consolidate-memory", "memory-stats", "add-observations"],
+    "version": "0.1.0",
+    "author": "Phronesis",
+    "verified": true
+  },
+  {
+    "name": "user-profiling",
+    "description": "Builds user preference profiles from session patterns",
+    "repo": "https://github.com/luluthehungrycat/phronesis",
+    "path": "src/user-profiling",
+    "tools": ["profile-summary", "profile-preference", "profile-insights"],
+    "version": "0.1.0",
+    "author": "Phronesis",
+    "verified": true
+  },
+  {
+    "name": "skill-lifecycle",
+    "description": "Skill version management, deprecation, and pruning",
+    "repo": "https://github.com/luluthehungrycat/phronesis",
+    "path": "src/skill-lifecycle",
+    "tools": ["skill-stats", "skill-versions", "skill-verify", "skill-deprecate", "skill-prune"],
+    "version": "0.1.0",
+    "author": "Phronesis",
+    "verified": true
+  },
+  {
+    "name": "remote-execution",
+    "description": "Run shell commands on remote targets via SSH/Docker",
+    "repo": "https://github.com/luluthehungrycat/phronesis",
+    "path": "src/remote-execution",
+    "tools": ["run-on", "list-targets"],
+    "version": "0.1.0",
+    "author": "Phronesis",
+    "verified": true
+  }
+]
