@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Phronesis Installer
 #
-# Usage: curl -fsSL https://raw.githubusercontent.com/luluthehermeticcrabBot/phronesis/main/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/luluthehungrycat/phronesis/main/install.sh | bash
 #
 # Requires: Node.js >= 18, npm, and git (optional: opencode)
 
@@ -46,7 +46,7 @@ ok "npm $(npm -v)"
 if command -v opencode &>/dev/null; then
   ok "opencode $(opencode --version 2>/dev/null || echo 'found')"
 else
-  warn "opencode not found. Install it from https://github.com/luluthehermeticcrabBot/opencode"
+  warn "opencode not found. Install it from https://github.com/luluthehungrycat/opencode"
 fi
 
 # ---- Install Phronesis CLI ----
@@ -56,7 +56,7 @@ info "Installing phronesis CLI..."
 npm install -g phronesis 2>&1 || {
   err "npm install failed. Trying alternate method..."
   TMP_DIR=$(mktemp -d)
-  git clone https://github.com/luluthehermeticcrabBot/phronesis.git "$TMP_DIR"
+  git clone https://github.com/luluthehungrycat/phronesis.git "$TMP_DIR"
   cd "$TMP_DIR/cli"
   npm install -g . 2>&1 || {
     err "Installation failed."
@@ -83,5 +83,5 @@ info "    phronesis              # Interactive session"
 info "    phronesis doctor       # System check"
 info "    phronesis --help       # All commands"
 info ""
-info "  Docs:  https://github.com/luluthehermeticcrabBot/phronesis"
+info "  Docs:  https://github.com/luluthehungrycat/phronesis"
 info ""
