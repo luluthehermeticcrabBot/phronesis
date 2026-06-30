@@ -71,6 +71,8 @@ phronesis send
 
 phronesis create-plugin <name>       → Scaffold a new Phronesis plugin
 
+phronesis dashboard [--port <N>]     → Launch web dashboard (sessions, config, gateway)
+phronesis plugin [search|info|list]  → Browse plugin registry
 phronesis setup                      → Interactive first-run wizard
 phronesis doctor                     → Diagnostics / system check
 phronesis version                    → Show version info
@@ -436,7 +438,7 @@ export function opencodeRun(tool, args, opts = {}) {
 - [x] `phronesis send webhook <msg>` — generic webhook
 - [x] `phronesis send slack <msg>` — Slack webhook
 - [x] `phronesis send discord <msg>` — Discord webhook
-- [ ] `phronesis dashboard` (web dashboard launch — future)
+- [x] `phronesis dashboard` — web dashboard (React-less SPA, Express API backend)
 
 ---
 
@@ -471,7 +473,7 @@ curl -fsSL https://phronesis.sh/install.sh | bash
 | AgentMail MCP | ✅ **Done** — OAuth configured + env var set | None |
 | Dogfood | 🔶 Ongoing | Active via Bot 2 |
 | Polish | 🔶 Ongoing | Fix as encountered |
-| CLI scaffold | ✅ **Phase 1a+1b+1c+2 complete** | 15 commands: chat, continue, fork, version, config, profile, gateway (status/start/stop/restart/logs/install/uninstall), skills (list/install/update/feedback), sessions (list/search/rebuild), create-plugin, completion, doctor, setup, send, migrate |
+| CLI scaffold | ✅ **Phase 1a+1b+1c+2+3 complete** | 17 commands: chat, continue, fork, version, config, profile, gateway (status/start/stop/restart/logs/install/uninstall), skills (list/install/update/feedback), sessions (list/search/rebuild), create-plugin, plugin (search/info/list), dashboard, completion, doctor, setup, send, migrate |
 | Search index | ✅ **FTS5 rebuild** | 3907+ rows indexed from opencode.db |
 | Container HEALTHCHECK | ✅ **serve-2** | Curl-based health check added to Dockerfile |
 | Session-search plugin | ✅ **Refactored** | Fixed execSync→spawnSync, sqlEscape, snippet column index |

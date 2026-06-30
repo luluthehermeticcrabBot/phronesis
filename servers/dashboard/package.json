@@ -1,0 +1,13 @@
+{
+  "name": "@phronesis/dashboard",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Phronesis web dashboard — session browser, config viewer, gateway status",
+  "main": "index.js",
+  "dependencies": {
+    "express": "^4.21.0"
+  },
+  "scripts": {
+    "start": "node index.js"
+  }
+}

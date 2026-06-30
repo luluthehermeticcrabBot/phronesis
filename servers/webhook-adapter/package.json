@@ -1,0 +1,13 @@
+{
+  "name": "@phronesis/webhook-adapter",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Webhook adapter — translates Slack/Discord/Telegram messages to OpenCode queries",
+  "main": "server.js",
+  "dependencies": {
+    "express": "^4.21.0"
+  },
+  "scripts": {
+    "start": "node server.js"
+  }
+}

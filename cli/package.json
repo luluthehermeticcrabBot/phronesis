@@ -16,11 +16,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/luluthehermeticcrabBot/phronesis.git"
+    "url": "git+https://github.com/luluthehungrycat/phronesis.git"
   },
-  "homepage": "https://github.com/luluthehermeticcrabBot/phronesis#readme",
+  "homepage": "https://github.com/luluthehungrycat/phronesis#readme",
   "bugs": {
-    "url": "https://github.com/luluthehermeticcrabBot/phronesis/issues"
+    "url": "https://github.com/luluthehungrycat/phronesis/issues"
   },
   "keywords": [
     "opencode",
@@ -33,6 +33,9 @@
     "node": ">=18"
   },
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "prepublishOnly": "node -e \"require('fs').existsSync('tests') && console.log('Run: npm test before publishing')\"",
     "test": "node tests/test.mjs",

@@ -14,6 +14,8 @@ import * as doctorCmd from "./commands/doctor.js";
 import * as setupCmd from "./commands/setup.js";
 import * as sendCmd from "./commands/send.js";
 import * as createPluginCmd from "./commands/create-plugin.js";
+import * as pluginCmd from "./commands/plugin.js";
+import * as dashboardCmd from "./commands/dashboard.js";
 import { opencode, opencodeRun, systemctl, journalctl, resolveProfile, resolveOpenCodeBinary } from "./lib/opencode.js";
 import { getProfileConfig } from "./lib/config.js";
 import { searchSessions, listSessions, rebuildSearchIndex } from "./lib/search.js";
@@ -111,6 +113,8 @@ function buildCli() {
     .command(doctorCmd)
     .command(setupCmd)
     .command(sendCmd)
+    .command(pluginCmd)
+    .command(dashboardCmd)
 
     // Gateway command
     .command(
