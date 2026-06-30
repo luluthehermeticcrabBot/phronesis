@@ -2,6 +2,7 @@
   {
     "name": "skill-creator",
     "description": "Auto-creates SKILL.md files from session workflows",
+    "category": "knowledge-management",
     "repo": "https://github.com/luluthehungrycat/phronesis",
     "path": "src/skill-creator",
     "tools": ["save-skill", "list-skills", "update-skill", "skill-feedback"],
@@ -12,6 +13,7 @@
   {
     "name": "session-search",
     "description": "Full-text search across past sessions using FTS5",
+    "category": "search",
     "repo": "https://github.com/luluthehungrycat/phronesis",
     "path": "src/session-search",
     "tools": ["search-sessions"],
@@ -22,6 +24,7 @@
   {
     "name": "persona",
     "description": "Persona management (get/set/edit/reset/import/export)",
+    "category": "configuration",
     "repo": "https://github.com/luluthehungrycat/phronesis",
     "path": "src/persona",
     "tools": ["get-persona", "set-persona", "edit-persona", "import-soul", "export-soul", "reset-persona"],
@@ -32,6 +35,7 @@
   {
     "name": "memory-consolidation",
     "description": "Periodic memory consolidation across sessions",
+    "category": "memory",
     "repo": "https://github.com/luluthehungrycat/phronesis",
     "path": "src/memory-consolidation",
     "tools": ["add-fact", "search-facts", "list-facts", "forget-fact", "consolidate-memory", "memory-stats", "add-observations"],
@@ -42,6 +46,7 @@
   {
     "name": "user-profiling",
     "description": "Builds user preference profiles from session patterns",
+    "category": "analytics",
     "repo": "https://github.com/luluthehungrycat/phronesis",
     "path": "src/user-profiling",
     "tools": ["profile-summary", "profile-preference", "profile-insights"],
@@ -52,6 +57,7 @@
   {
     "name": "skill-lifecycle",
     "description": "Skill version management, deprecation, and pruning",
+    "category": "knowledge-management",
     "repo": "https://github.com/luluthehungrycat/phronesis",
     "path": "src/skill-lifecycle",
     "tools": ["skill-stats", "skill-versions", "skill-verify", "skill-deprecate", "skill-prune"],
@@ -62,11 +68,45 @@
   {
     "name": "remote-execution",
     "description": "Run shell commands on remote targets via SSH/Docker",
+    "category": "automation",
     "repo": "https://github.com/luluthehungrycat/phronesis",
     "path": "src/remote-execution",
     "tools": ["run-on", "list-targets"],
     "version": "0.1.0",
     "author": "Phronesis",
     "verified": true
+  },
+  {
+    "name": "code-analyzer",
+    "description": "Static analysis and code quality checks for JS/TS/Python projects",
+    "category": "development",
+    "repo": "https://github.com/luluthehungrycat/phronesis",
+    "path": "src/code-analyzer",
+    "tools": ["analyze-code", "check-quality", "find-issues"],
+    "version": "0.1.0",
+    "author": "Phronesis",
+    "verified": false
+  },
+  {
+    "name": "web-scraper",
+    "description": "Extract and process content from web pages and APIs",
+    "category": "data-ingestion",
+    "repo": "https://github.com/luluthehungrycat/phronesis",
+    "path": "src/web-scraper",
+    "tools": ["scrape-url", "extract-content", "fetch-api"],
+    "version": "0.1.0",
+    "author": "Phronesis",
+    "verified": false
+  },
+  {
+    "name": "notification-router",
+    "description": "Route notifications across Telegram, Slack, Discord, and email based on rules",
+    "category": "communication",
+    "repo": "https://github.com/luluthehungrycat/phronesis",
+    "path": "src/notification-router",
+    "tools": ["route-notification", "list-routes", "test-route"],
+    "version": "0.1.0",
+    "author": "Phronesis",
+    "verified": false
   }
 ]

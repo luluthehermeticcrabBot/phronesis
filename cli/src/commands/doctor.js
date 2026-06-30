@@ -4,82 +4,97 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { resolveProfile, systemctl, opencodeAvailable } from "../lib/opencode.js";
 import { getActiveProfile, getProfileConfig, getGlobalConfig, listProfiles } from "../lib/config.js";
-
+import { enhanceError } from "../lib/error-helpers.js";
 import { GLOBAL_CONFIG_PATH } from "../constants.js";
 
 function ok(label, msg) {
-  console.log(`  ${label.padEnd(22)} ✅ ${msg || ""}`);
+  console.log(`  ${label.padEnd(22)} \u2705 ${msg || ""}`);
 }
 
 function warn(label, msg) {
-  console.log(`  ${label.padEnd(22)} ⚠️  ${msg || ""}`);
+  console.log(`  ${label.padEnd(22)} \u26a0\ufe0f  ${msg || ""}`);
 }
 
 function fail(label, msg) {
-  console.log(`  ${label.padEnd(22)} ❌ ${msg || ""}`);
+  console.log(`  ${label.padEnd(22)} \u274c ${msg || ""}`);
 }
 
 function skip(label) {
-  console.log(`  ${label.padEnd(22)} 🔶 not checked`);
+  console.log(`  ${label.padEnd(22)} \ud83d\udd36 not checked`);
 }
 
 export const command = "doctor";
 export const describe = "Run system diagnostics";
-export const builder = {};
 
-export function handler(argv) {
+export function builder(yargs) {
+  return yargs.option("json", {
+    type: "boolean",
+    describe: "Output as JSON",
+    default: false,
+  });
+}
+
+function collectDiagnostics(argv) {
   const profile = resolveProfile(argv.profile);
-  const config = getGlobalConfig();
-
-  console.log(`\n  Phronesis Diagnostics\n`);
+  const checks = [];
 
   // 1. opencode CLI
   if (opencodeAvailable()) {
-    const ver = spawnSync("opencode", ["--version"], { encoding: "utf8", timeout: 5000 });
-    ok("opencode CLI", ver.stdout?.trim() || "available");
+    let verStr = "available";
+    try {
+      const ver = spawnSync("opencode", ["--version"], { encoding: "utf8", timeout: 5000 });
+      verStr = ver.stdout?.trim() || "available";
+    } catch (e) {
+      const enhanced = enhanceError(e, { command: "opencode --version" });
+      verStr = enhanced.message;
+    }
+    checks.push({ name: "opencode CLI", status: "ok", message: verStr });
   } else {
-    fail("opencode CLI", "not found in PATH");
+    checks.push({ name: "opencode CLI", status: "fail", message: "Not found in PATH. Install opencode first." });
   }
 
   // 2. Active profile
-  ok("active profile", profile);
+  checks.push({ name: "active profile", status: "ok", message: profile });
 
   // 3. Config file
   if (existsSync(GLOBAL_CONFIG_PATH)) {
-    ok("config file", GLOBAL_CONFIG_PATH);
+    checks.push({ name: "config file", status: "ok", message: GLOBAL_CONFIG_PATH });
   } else {
-    fail("config file", `not found at ${GLOBAL_CONFIG_PATH}`);
+    checks.push({ name: "config file", status: "fail", message: `not found at ${GLOBAL_CONFIG_PATH}` });
   }
 
   // 4. Config validity
   try {
+    const config = getGlobalConfig();
     if (config && typeof config === "object") {
-      ok("config valid", "");
+      checks.push({ name: "config valid", status: "ok", message: "" });
     } else {
-      fail("config valid", "invalid YAML");
+      checks.push({ name: "config valid", status: "fail", message: "invalid YAML" });
     }
   } catch {
-    fail("config valid", "parse error");
+    checks.push({ name: "config valid", status: "fail", message: "parse error" });
   }
 
   // 5. Profiles
   const profiles = listProfiles();
   const activeProfile = getActiveProfile();
   if (profiles.length > 0) {
-    ok("profiles", `${profiles.length} found (active: ${activeProfile})`);
-    for (const p of profiles) {
-      console.log(`    ${p === activeProfile ? "*" : " "} ${p}`);
-    }
+    checks.push({
+      name: "profiles",
+      status: "ok",
+      message: `${profiles.length} found (active: ${activeProfile})`,
+      details: profiles,
+    });
   } else {
-    fail("profiles", "none found");
+    checks.push({ name: "profiles", status: "fail", message: "none found" });
   }
 
   // 6. Node.js
   const [major] = process.version.slice(1).split(".").map(Number);
   if (major >= 18) {
-    ok("Node.js", `v${process.versions.node}`);
+    checks.push({ name: "Node.js", status: "ok", message: `v${process.versions.node}` });
   } else {
-    fail("Node.js", `v${process.versions.node} (need >= 18)`);
+    checks.push({ name: "Node.js", status: "fail", message: `v${process.versions.node} (need >= 18)` });
   }
 
   // 7. Server config (profile overrides global)
@@ -90,11 +105,11 @@ export function handler(argv) {
   const serverUrl = serverCfg.url;
 
   if (serverUrl) {
-    ok("server URL", serverUrl);
+    checks.push({ name: "server URL", status: "ok", message: serverUrl });
   } else if (serverPort) {
-    ok("server URL", `http://localhost:${serverPort}`);
+    checks.push({ name: "server URL", status: "ok", message: `http://localhost:${serverPort}` });
   } else {
-    skip("server URL");
+    checks.push({ name: "server URL", status: "skip", message: "not configured" });
   }
 
   // 8. Server health
@@ -107,31 +122,36 @@ export function handler(argv) {
       });
       const httpCode = result.stdout?.trim();
       if (httpCode && httpCode !== "000") {
-        ok("server health", `HTTP ${httpCode}`);
+        checks.push({ name: "server health", status: "ok", message: `HTTP ${httpCode}` });
       } else {
-        fail("server health", `unreachable at ${checkUrl} (is opencode serve running?)`);
+        checks.push({
+          name: "server health",
+          status: "fail",
+          message: `unreachable at ${checkUrl} (is opencode serve running?)`,
+        });
       }
-    } catch {
-      fail("server health", `unreachable at ${checkUrl}`);
+    } catch (e) {
+      const enhanced = enhanceError(e, { command: "curl health check" });
+      checks.push({ name: "server health", status: "fail", message: `unreachable at ${checkUrl}` });
     }
   } else {
-    skip("server health");
+    checks.push({ name: "server health", status: "skip", message: "no URL configured" });
   }
 
   // 9. Gateway
   try {
     const out = systemctl("is-active", `phronesis-gateway-${profile}-telegram-1`, { profile });
-    ok("gateway", `active (telegram-1)`);
+    checks.push({ name: "gateway", status: "ok", message: "active (telegram-1)" });
   } catch {
     try {
       const out = systemctl("is-active", "opencode-telegram", { profile });
       if (out?.trim() === "active") {
-        ok("gateway", "active (legacy opencode-telegram)");
+        checks.push({ name: "gateway", status: "ok", message: "active (legacy opencode-telegram)" });
       } else {
-        ok("gateway", "inactive");
+        checks.push({ name: "gateway", status: "ok", message: "inactive" });
       }
     } catch {
-      ok("gateway", "not installed");
+      checks.push({ name: "gateway", status: "ok", message: "not installed" });
     }
   }
 
@@ -142,9 +162,13 @@ export function handler(argv) {
   ];
   const foundDb = searchDbPaths.find((p) => existsSync(p));
   if (foundDb) {
-    ok("search DB", foundDb);
+    checks.push({ name: "search DB", status: "ok", message: foundDb });
   } else {
-    warn("search DB", "not found — run the server plugin to build the index");
+    checks.push({
+      name: "search DB",
+      status: "warn",
+      message: "not found \u2014 run the server plugin to build the index",
+    });
   }
 
   // 11. Shell completions
@@ -155,10 +179,34 @@ export function handler(argv) {
   ];
   const foundCompletion = completionPaths.find((p) => existsSync(p));
   if (foundCompletion) {
-    ok("completions", foundCompletion);
+    checks.push({ name: "completions", status: "ok", message: foundCompletion });
   } else {
-    warn("completions", "not installed — run 'phronesis completion bash | source'");
+    checks.push({
+      name: "completions",
+      status: "warn",
+      message: "not installed \u2014 run 'phronesis completion bash | source'",
+    });
   }
 
+  return { profile, timestamp: new Date().toISOString(), checks };
+}
+
+function printDiagnostics(data) {
+  console.log(`\n  Phronesis Diagnostics\n`);
+  for (const check of data.checks) {
+    if (check.status === "ok") ok(check.name, check.message);
+    else if (check.status === "warn") warn(check.name, check.message);
+    else if (check.status === "fail") fail(check.name, check.message);
+    else skip(check.name);
+  }
   console.log("");
+}
+
+export function handler(argv) {
+  const data = collectDiagnostics(argv);
+  if (argv.json) {
+    console.log(JSON.stringify(data, null, 2));
+    return;
+  }
+  printDiagnostics(data);
 }

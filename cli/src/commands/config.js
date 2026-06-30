@@ -18,6 +18,11 @@ export function builder(yargs) {
     .positional("value", {
       describe: "Config value (for 'set')",
       type: "string",
+    })
+    .option("json", {
+      describe: "Output as JSON",
+      type: "boolean",
+      default: false,
     });
 }
 
@@ -32,6 +37,10 @@ export function handler(argv) {
 
     case "get": {
       const value = getConfigKey(argv.key);
+      if (argv.json) {
+        console.log(JSON.stringify({ key: argv.key, value: value ?? null }));
+        return;
+      }
       if (value === undefined || value === null) {
         console.log("(not set)");
       } else if (typeof value === "object") {

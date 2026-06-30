@@ -65,6 +65,11 @@ export function builder(yargs) {
     .option("from", {
       describe: "Clone config from an existing profile (for 'create')",
       type: "string",
+    })
+    .option("json", {
+      describe: "Output as JSON",
+      type: "boolean",
+      default: false,
     });
 }
 
@@ -73,6 +78,11 @@ export function handler(argv) {
     case "list": {
       const profiles = listProfiles();
       const active = getActiveProfile();
+
+      if (argv.json) {
+        console.log(JSON.stringify({ profiles, active }));
+        return;
+      }
 
       if (profiles.length === 0) {
         console.log("No profiles found. Use 'phronesis profile create <name>'");
@@ -89,6 +99,10 @@ export function handler(argv) {
 
     case "current": {
       const active = getActiveProfile();
+      if (argv.json) {
+        console.log(JSON.stringify({ profile: active }));
+        return;
+      }
       console.log(active);
       break;
     }
