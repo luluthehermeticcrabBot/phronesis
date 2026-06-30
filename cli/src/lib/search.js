@@ -133,7 +133,7 @@ export function searchSessions(query, opts = {}) {
 /**
  * Format search results as human-readable text.
  */
-function formatResults(rows, query) {
+export function formatResults(rows, query) {
   if (rows.length === 0) {
     return `No results found for "${query}".`;
   }

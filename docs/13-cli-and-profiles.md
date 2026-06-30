@@ -69,6 +69,8 @@ phronesis send
   slack <message> [--profile <name>] [--url <url>]      → Slack webhook
   discord <message> [--profile <name>] [--url <url>]    → Discord webhook
 
+phronesis create-plugin <name>       → Scaffold a new Phronesis plugin
+
 phronesis setup                      → Interactive first-run wizard
 phronesis doctor                     → Diagnostics / system check
 phronesis version                    → Show version info
@@ -469,7 +471,7 @@ curl -fsSL https://phronesis.sh/install.sh | bash
 | AgentMail MCP | ✅ **Done** — OAuth configured + env var set | None |
 | Dogfood | 🔶 Ongoing | Active via Bot 2 |
 | Polish | 🔶 Ongoing | Fix as encountered |
-| CLI scaffold | ✅ **Phase 1a+1b+1c+2 complete** | 14 commands: chat, continue, fork, version, config, profile, gateway (status/start/stop/restart/logs/install/uninstall), skills (list/install/update/feedback), sessions (list/search/rebuild), completion, doctor, setup, send, migrate |
+| CLI scaffold | ✅ **Phase 1a+1b+1c+2 complete** | 15 commands: chat, continue, fork, version, config, profile, gateway (status/start/stop/restart/logs/install/uninstall), skills (list/install/update/feedback), sessions (list/search/rebuild), create-plugin, completion, doctor, setup, send, migrate |
 | Search index | ✅ **FTS5 rebuild** | 3907+ rows indexed from opencode.db |
 | Container HEALTHCHECK | ✅ **serve-2** | Curl-based health check added to Dockerfile |
 | Session-search plugin | ✅ **Refactored** | Fixed execSync→spawnSync, sqlEscape, snippet column index |
