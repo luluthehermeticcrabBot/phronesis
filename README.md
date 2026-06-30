@@ -21,7 +21,7 @@ Phronesis fills these gaps, one plugin at a time.
 cli/                             Phronesis CLI & wrapper
 ├── bin/phronesis.js             Entry point
 ├── src/
-│   ├── cli.js                   Command router (14 commands)
+│   ├── cli.js                   Command router (15 commands)
 │   ├── commands/                Modular commands (version, config, profile, etc.)
 │   └── lib/                     Shared libs (opencode wrapper, config, search, paths)
 ├── package.json                 npm package (@phronesis/cli)
@@ -92,3 +92,7 @@ tests/
 1. **Leverage existing infrastructure** — SKILL.md, SQLite sessions, 20+ plugin hooks, MCP. Never rebuild what's already there.
 2. **Composability over monoliths** — Each capability is a standalone OpenCode plugin that works independently and together.
 3. **Learning as the differentiator** — The single highest-leverage feature is auto-skill creation. It compounds every session.
+
+---
+
+*Phronesis is architected and directed by human engineering. Implementation is built collaboratively with OpenCode AI agents — every design decision, tradeoff, and architecture choice is human-owned; the agents execute under active direction.*
