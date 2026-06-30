@@ -27,11 +27,22 @@ jobs:
       - name: Install build tools (better-sqlite3 native compilation)
         run: sudo apt-get update && sudo apt-get install -y python3 make g++ sqlite3
 
+      - name: Install CLI dependencies
+        run: npm ci
+        working-directory: ./cli
+
       - name: Install plugin dependencies
         run: npm run setup
 
-      - name: Run test suite
+      - name: Run container / plugin tests
         run: npm test
+
+      - name: Run CLI unit tests
+        run: npm test
+        working-directory: ./cli
+
+      - name: Run E2E smoke tests
+        run: node tests/e2e/test.mjs
 
       - name: Show test output on failure
         if: failure()

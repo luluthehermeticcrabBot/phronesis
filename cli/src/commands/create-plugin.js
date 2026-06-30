@@ -30,6 +30,43 @@ export default async function plugin(ctx) {
 }
 `;
 
+const TEST_TPL = (name) => `import { describe, it } from "node:test";
+import assert from "node:assert";
+
+// The plugin entry point
+import plugin from "../index.js";
+
+describe("${name} plugin", () => {
+  it("should export a default function", () => {
+    assert.strictEqual(typeof plugin, "function", "plugin should be a function");
+  });
+
+  it("should register tools on load", async () => {
+    const registered = [];
+    const ctx = {
+      registerTool: (t) => registered.push(t),
+      on: () => {},
+    };
+    await plugin(ctx);
+    assert.ok(registered.length >= 1, "should register at least one tool");
+    assert.strictEqual(registered[0].name, "${name}-hello");
+  });
+
+  it("should expose a runnable tool", async () => {
+    const registered = [];
+    const ctx = {
+      registerTool: (t) => registered.push(t),
+      on: () => {},
+    };
+    await plugin(ctx);
+    const tool = registered[0];
+    const result = await tool.handler({}, {});
+    assert.ok(result.message, "tool should return a message");
+    assert.ok(result.message.includes("Hello from the ${name} plugin"));
+  });
+});
+`;
+
 const PACKAGE_TPL = (name) => `{
   "name": "opencode-${name}",
   "version": "0.1.0",
@@ -39,6 +76,9 @@ const PACKAGE_TPL = (name) => `{
   "opencode": {
     "type": "plugin",
     "hooks": ["tool.execute.after"]
+  },
+  "scripts": {
+    "test": "node --test tests/test.mjs"
   },
   "dependencies": {
     "@opencode-ai/plugin": "^1.14.19"
@@ -79,6 +119,7 @@ export function handler(argv) {
   const targetDir = argv.dir || join(PROJECT_ROOT, "src", name);
   const indexFile = join(targetDir, "index.js");
   const pkgFile = join(targetDir, "package.json");
+  const testDir = join(targetDir, "tests");
 
   // Check for conflicts
   if (existsSync(targetDir)) {
@@ -93,10 +134,13 @@ export function handler(argv) {
   // Write files
   writeFileSync(indexFile, PLUGIN_INDEX_TPL(name), "utf8");
   writeFileSync(pkgFile, PACKAGE_TPL(name), "utf8");
+  mkdirSync(testDir, { recursive: true });
+  writeFileSync(join(testDir, "test.mjs"), TEST_TPL(name), "utf8");
 
   console.log(`[phronesis] Plugin "${name}" scaffolded at:`);
   console.log(`  ${indexFile}`);
   console.log(`  ${pkgFile}`);
+  console.log(`  ${join(testDir, "test.mjs")}`);
 
   // npm install
   if (!argv["skip-install"]) {
