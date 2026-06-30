@@ -13,9 +13,10 @@ import * as completionCmd from "./commands/completion.js";
 import * as doctorCmd from "./commands/doctor.js";
 import * as setupCmd from "./commands/setup.js";
 import * as sendCmd from "./commands/send.js";
+import * as createPluginCmd from "./commands/create-plugin.js";
 import { opencode, opencodeRun, systemctl, journalctl, resolveProfile, resolveOpenCodeBinary } from "./lib/opencode.js";
 import { getProfileConfig } from "./lib/config.js";
-import { searchSessions, listSessions } from "./lib/search.js";
+import { searchSessions, listSessions, rebuildSearchIndex } from "./lib/search.js";
 import { profileDir } from "./lib/paths.js";
 
 /**
@@ -343,8 +344,8 @@ function buildCli() {
       (yargs) => {
         yargs
           .positional("action", {
-            describe: "Action: list, search",
-            choices: ["list", "search"],
+            describe: "Action: list, search, rebuild",
+            choices: ["list", "search", "rebuild"],
           })
           .positional("query", {
             describe: "Search query (for 'search')",
@@ -357,6 +358,11 @@ function buildCli() {
           })
           .option("json", {
             describe: "Output as JSON",
+            type: "boolean",
+            default: false,
+          })
+          .option("overwrite", {
+            describe: "Drop and rebuild the index (for 'rebuild')",
             type: "boolean",
             default: false,
           });
@@ -396,9 +402,26 @@ function buildCli() {
               console.error(`List error: ${err.message}`);
             }
             break;
+          case "rebuild": {
+            const profileCfg = getProfileConfig(profile);
+            try {
+              const result = rebuildSearchIndex({
+                profile,
+                dbPath: profileCfg?.search?.db_path,
+                overwrite: argv.overwrite,
+              });
+              console.log(result);
+            } catch (err) {
+              console.error(`Rebuild error: ${err.message}`);
+            }
+            break;
+          }
         }
       }
     )
+
+    // Plugin scaffolding
+    .command(createPluginCmd)
 
     // Migration (Phase 2)
     .command(migrateCmd)
